@@ -1,0 +1,29 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    # Not published to the host by default; the app talks to it over the compose network.
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      SERVE_CLIENT: "true"
+      MONGO_URI: mongodb://mongo:27017/school_management
+      JWT_SECRET: ${JWT_SECRET:-please_change_this_in_production}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:5000}
+      # Uploaded images live on a volume so they survive redeploys.
+    volumes:
+      - uploads-data:/app/server/uploads
+    ports:
+      - "5000:5000"
+
+volumes:
+  mongo-data:
+  uploads-data:
