@@ -22,16 +22,26 @@ import { uploadsRouter, uploadsDir } from './modules/uploads/uploads.routes.js';
 export function createApp() {
   const app = express();
 
-  app.use(
-    cors({
+  // CORS: allow non-browser tools, whitelisted origins, and — importantly —
+  // the app's own origin (same-origin requests when the API also serves the
+  // client). Same-origin is detected by comparing the Origin host to the
+  // request Host, so it works on Render and any custom domain automatically.
+  app.use((req, res, next) => {
+    const corsMw = cors({
       origin(origin, cb) {
-        // Allow non-browser tools (no origin) and any whitelisted origin.
-        if (!origin || env.clientOrigins.includes(origin)) return cb(null, true);
-        return cb(new Error(`Origin not allowed by CORS: ${origin}`));
+        if (!origin) return cb(null, true); // curl, server-to-server
+        if (env.clientOrigins.includes(origin)) return cb(null, true);
+        try {
+          if (new URL(origin).host === req.headers.host) return cb(null, true);
+        } catch {
+          /* malformed origin */
+        }
+        return cb(null, false); // deny without throwing a 500
       },
       credentials: true,
-    })
-  );
+    });
+    return corsMw(req, res, next);
+  });
   app.use(express.json({ limit: '2mb' }));
   if (env.nodeEnv !== 'test') app.use(morgan('dev'));
 
