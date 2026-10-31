@@ -41,6 +41,7 @@ export default function TransactionManager({ type }) {
   const [categories, setCategories] = useState([]);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [feeTotal, setFeeTotal] = useState(0); // fee collections (income only)
   const [filters, setFilters] = useState({ from: '', to: '', category: '', search: '' });
 
   const [open, setOpen] = useState(false);
@@ -66,12 +67,20 @@ export default function TransactionManager({ type }) {
       if (filters.search) params.search = filters.search;
       const r = await api.get(endpoint, { params });
       setRows(r.data.items);
+      // For income, also pull fee collections for the same period from the Fees module.
+      if (isIncome) {
+        const sParams = {};
+        if (filters.from) sParams.from = filters.from;
+        if (filters.to) sParams.to = filters.to;
+        const s = await api.get('/finance/summary', { params: sParams });
+        setFeeTotal(s.data.summary?.income?.fees || 0);
+      }
     } catch {
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [endpoint, filters]);
+  }, [endpoint, filters, isIncome]);
 
   useEffect(() => {
     const id = setTimeout(load, filters.search ? 300 : 0);
@@ -226,14 +235,41 @@ export default function TransactionManager({ type }) {
         </button>
       </div>
 
-      {/* Total */}
-      <div className="rounded-xl bg-white p-4 shadow-sm">
-        <span className="text-sm text-slate-500">{t('finance.total')}: </span>
-        <span className={`text-xl font-bold ${isIncome ? 'text-emerald-600' : 'text-red-600'}`}>
-          {taka}
-          {total.toLocaleString()}
-        </span>
-      </div>
+      {/* Totals */}
+      {isIncome ? (
+        <div className="grid grid-cols-1 gap-3 rounded-xl bg-white p-4 shadow-sm sm:grid-cols-3">
+          <div>
+            <div className="text-xs font-medium text-slate-500">{t('finance.feeCollections')}</div>
+            <div className="text-lg font-bold text-emerald-600">
+              {taka}
+              {feeTotal.toLocaleString()}
+            </div>
+            <div className="text-[11px] text-slate-400">{t('finance.feeCollectionsNote')}</div>
+          </div>
+          <div>
+            <div className="text-xs font-medium text-slate-500">{t('finance.otherIncome')}</div>
+            <div className="text-lg font-bold text-slate-700">
+              {taka}
+              {total.toLocaleString()}
+            </div>
+          </div>
+          <div className="sm:border-l sm:border-slate-200 sm:pl-4">
+            <div className="text-xs font-medium text-slate-500">{t('finance.totalIncome')}</div>
+            <div className="text-xl font-bold text-emerald-700">
+              {taka}
+              {(feeTotal + total).toLocaleString()}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <span className="text-sm text-slate-500">{t('finance.total')}: </span>
+          <span className="text-xl font-bold text-red-600">
+            {taka}
+            {total.toLocaleString()}
+          </span>
+        </div>
+      )}
 
       <DataTable columns={columns} rows={rows} loading={loading} />
 
