@@ -3,15 +3,17 @@ import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
 import Modal from '../../components/ui/Modal.jsx';
 import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
+import StudentPicker from '../../components/ui/StudentPicker.jsx';
 import { useToast } from '../../components/ui/Toast.jsx';
 import { t as bt } from '../../utils/bilingual.js';
 
+const thisMonth = () => new Date().toISOString().slice(0, 7);
+// "2026-11" -> "November 2026"
+const monthLabel = (m) => (m ? new Date(m + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' }) : '');
+
 /**
- * Generate an invoice for a student from a fee structure, then hand the new
- * invoice id back so a printable invoice can be shown.
- * @param {object|null} structure  The fee structure (null = closed).
- * @param {() => void} onClose
- * @param {(invoiceId: string) => void} onCreated
+ * Generate an invoice for a student from a fee structure.
+ * Flow: pick class -> searchable student -> month.
  */
 export default function GenerateInvoiceModal({ structure, onClose, onCreated }) {
   const { t, i18n } = useTranslation();
@@ -19,32 +21,43 @@ export default function GenerateInvoiceModal({ structure, onClose, onCreated }) 
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
   const taka = t('common.taka');
 
+  const structClassId = structure?.class?.id || structure?.class?._id || structure?.class || '';
+
+  const [classes, setClasses] = useState([]);
+  const [classId, setClassId] = useState('');
   const [students, setStudents] = useState([]);
   const [student, setStudent] = useState('');
-  const [periodEn, setPeriodEn] = useState('');
+  const [month, setMonth] = useState(thisMonth());
   const [dueDate, setDueDate] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const classId = structure?.class?.id || structure?.class?._id || structure?.class || '';
-
+  // Reset + load classes when opened; default the class filter to the structure's class.
   useEffect(() => {
     if (!structure) return;
     setStudent('');
-    setPeriodEn('');
+    setMonth(thisMonth());
     setDueDate('');
-    const params = { limit: 500 };
+    setClassId(structClassId || '');
+    api.get('/academics/classes', { params: { limit: 200 } }).then((r) => setClasses(r.data.items));
+  }, [structure, structClassId]);
+
+  // Load students for the selected class (or all).
+  useEffect(() => {
+    if (!structure) return;
+    setStudent('');
+    const params = { limit: 1000 };
     if (classId) params.class = classId;
     api.get('/people/students', { params }).then((r) => setStudents(r.data.items));
   }, [structure, classId]);
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!structure) return;
+    if (!structure || !student) return;
     setSaving(true);
     try {
       const res = await api.post('/fees/invoices', {
         student,
-        period: { en: periodEn, bn: '' },
+        period: { en: monthLabel(month), bn: '' },
         ...(dueDate ? { dueDate } : {}),
         items: [
           {
@@ -98,19 +111,25 @@ export default function GenerateInvoiceModal({ structure, onClose, onCreated }) 
               {Number(structure.amount).toLocaleString()}
             </span>
           </div>
-          <Field label={t('fees.student')} required>
-            <Select value={student} onChange={(e) => setStudent(e.target.value)} required>
-              <option value="">{t('fees.selectStudent')}</option>
-              {students.map((s) => (
-                <option key={s.id || s._id} value={s.id || s._id}>
-                  {bt(s.name, lang)} ({s.admissionNo})
+
+          <Field label={t('fees.class')}>
+            <Select value={classId} onChange={(e) => setClassId(e.target.value)}>
+              <option value="">{t('fees.allClasses')}</option>
+              {classes.map((c) => (
+                <option key={c.id || c._id} value={c.id || c._id}>
+                  {bt(c.name, lang)}
                 </option>
               ))}
             </Select>
           </Field>
+
+          <Field label={t('fees.student')} required>
+            <StudentPicker students={students} value={student} onChange={setStudent} />
+          </Field>
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label={t('fees.periodEn')}>
-              <TextInput value={periodEn} onChange={(e) => setPeriodEn(e.target.value)} placeholder="August 2026" />
+            <Field label={t('fees.month')}>
+              <TextInput type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
             </Field>
             <Field label={t('fees.dueDate')}>
               <TextInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
