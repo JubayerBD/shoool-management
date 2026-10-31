@@ -1,3 +1,5 @@
+import { schoolDate } from '../../utils/schoolDate.js';
+import { getAll } from '../../api/getAll.js';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
@@ -7,7 +9,7 @@ import StudentPicker from '../../components/ui/StudentPicker.jsx';
 import { useToast } from '../../components/ui/Toast.jsx';
 import { t as bt } from '../../utils/bilingual.js';
 
-const thisMonth = () => new Date().toISOString().slice(0, 7);
+const thisMonth = () => schoolDate().slice(0, 7);
 // "2026-11" -> "November 2026"
 const monthLabel = (m) => (m ? new Date(m + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' }) : '');
 
@@ -38,7 +40,7 @@ export default function GenerateInvoiceModal({ structure, onClose, onCreated }) 
     setMonth(thisMonth());
     setDueDate('');
     setClassId(structClassId || '');
-    api.get('/academics/classes', { params: { limit: 200 } }).then((r) => setClasses(r.data.items));
+    getAll('/academics/classes', { params: { limit: 200 } }).then((r) => setClasses(r.data.items));
   }, [structure, structClassId]);
 
   // Load students for the selected class (or all).
@@ -47,7 +49,7 @@ export default function GenerateInvoiceModal({ structure, onClose, onCreated }) 
     setStudent('');
     const params = { limit: 1000 };
     if (classId) params.class = classId;
-    api.get('/people/students', { params }).then((r) => setStudents(r.data.items));
+    getAll('/people/students', { params }).then((r) => setStudents(r.data.items));
   }, [structure, classId]);
 
   const submit = async (e) => {

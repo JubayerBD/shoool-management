@@ -34,6 +34,8 @@ const incomeSchema = new Schema(
 /** An expense entry. */
 const expenseSchema = new Schema(
   {
+    generationKey: { type: String },
+    recurringSource: { type: Schema.Types.ObjectId, ref: 'Expense' },
     category: { type: Schema.Types.ObjectId, ref: 'FinanceCategory', index: true },
     payee: { type: String, trim: true, default: '' }, // vendor / person paid
     amount: { type: Number, required: true, min: 0 },
@@ -52,6 +54,7 @@ const expenseSchema = new Schema(
 );
 
 /** Optional default salary structure per staff member. */
+expenseSchema.index({ generationKey: 1 }, { unique: true, sparse: true });
 const salaryStructureSchema = new Schema(
   {
     staff: { type: Schema.Types.ObjectId, ref: 'Teacher', required: true, unique: true, index: true },

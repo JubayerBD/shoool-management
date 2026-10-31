@@ -1,3 +1,4 @@
+import { schoolDate } from '../../utils/schoolDate.js';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
@@ -5,9 +6,8 @@ import { t as bt } from '../../utils/bilingual.js';
 import { SummaryCards, HeadCharts, MonthlyCharts } from './FinanceCharts.jsx';
 
 function monthRange() {
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  const to = now.toISOString().slice(0, 10);
+  const to = schoolDate();
+  const from = to.slice(0, 7) + '-01';
   return { from, to };
 }
 

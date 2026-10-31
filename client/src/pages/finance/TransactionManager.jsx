@@ -1,3 +1,5 @@
+import { schoolDate } from '../../utils/schoolDate.js';
+import { getAll } from '../../api/getAll.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
@@ -11,7 +13,7 @@ import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
 import TransactionVoucher from './TransactionVoucher.jsx';
 
 const METHODS = ['cash', 'bkash', 'nagad', 'rocket', 'card', 'bank'];
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => schoolDate();
 
 /**
  * Shared list + add/edit screen for income or expense entries.
@@ -67,7 +69,7 @@ export default function TransactionManager({ type }) {
       if (filters.to) params.to = filters.to;
       if (filters.category) params.category = filters.category;
       if (filters.search) params.search = filters.search;
-      const r = await api.get(endpoint, { params });
+      const r = await getAll(endpoint, { params });
       setRows(r.data.items);
       // For income, also pull fee collections for the same period from the Fees module.
       if (isIncome) {
@@ -101,7 +103,7 @@ export default function TransactionManager({ type }) {
     setForm({
       category: r.category?.id || r.category?._id || r.category || '',
       amount: r.amount ?? '',
-      date: r.date ? r.date.slice(0, 10) : today(),
+      date: r.date ? schoolDate(r.date) : today(),
       method: r.method || 'cash',
       [partyKey]: r[partyKey] || '',
       reference: r.reference || '',
@@ -384,6 +386,9 @@ export default function TransactionManager({ type }) {
                   <option value="quarterly">{t('finance.freq.quarterly')}</option>
                   <option value="yearly">{t('finance.freq.yearly')}</option>
                 </Select>
+              )}
+              {form.recurring?.enabled && (
+                <p className="w-full text-xs text-slate-500">{t('finance.recurringNote')}</p>
               )}
             </div>
           )}

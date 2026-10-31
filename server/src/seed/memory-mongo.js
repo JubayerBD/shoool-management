@@ -4,12 +4,13 @@
  *
  * Usage: node src/seed/memory-mongo.js   (keeps running until Ctrl-C)
  */
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 
 const PORT = Number(process.env.MEMORY_MONGO_PORT) || 27017;
 
-const mongod = await MongoMemoryServer.create({
-  instance: { port: PORT, dbName: 'school_management' },
+const mongod = await MongoMemoryReplSet.create({
+  instanceOpts: [{ port: PORT }],
+  replSet: { count: 1, storageEngine: 'wiredTiger' },
 });
 
 // eslint-disable-next-line no-console

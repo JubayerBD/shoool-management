@@ -1,3 +1,5 @@
+import { schoolDate } from '../../utils/schoolDate.js';
+import { getAll } from '../../api/getAll.js';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
@@ -6,11 +8,10 @@ import { Select } from '../../components/ui/Field.jsx';
 import { SummaryCards, HeadCharts } from './FinanceCharts.jsx';
 
 function presets() {
-  const now = new Date();
-  const iso = (d) => d.toISOString().slice(0, 10);
+  const today = schoolDate();
   return {
-    month: { from: iso(new Date(now.getFullYear(), now.getMonth(), 1)), to: iso(now) },
-    year: { from: iso(new Date(now.getFullYear(), 0, 1)), to: iso(now) },
+    month: { from: today.slice(0, 7) + '-01', to: today },
+    year: { from: today.slice(0, 4) + '-01-01', to: today },
     all: { from: '', to: '' },
   };
 }
@@ -39,7 +40,7 @@ export default function FinanceReports() {
       const [s, a, tx] = await Promise.all([
         api.get('/finance/summary', { params }),
         api.get('/finance/analytics', { params }),
-        api.get('/finance/transactions', { params: txParams }),
+        getAll('/finance/transactions', { params: txParams }, 'transactions'),
       ]);
       setSummary(s.data.summary);
       setAnalytics(a.data);

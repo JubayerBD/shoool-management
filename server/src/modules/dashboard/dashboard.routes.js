@@ -6,21 +6,24 @@ import { Invoice, Payment } from '../../models/Fees.js';
 import { Attendance } from '../../models/Attendance.js';
 import { Notice } from '../../models/Schedule.js';
 
+import { FeeAdjustment } from '../../models/FeeWorkflow.js';
+import { studentScope } from '../../utils/feeAccess.js';
+const financialScope = (user) => ['admin', 'accountant', 'student', 'parent'].includes(user.role) ? studentScope(user) : { _id: null };
 const router = Router();
 
 // High-level counts for the admin/staff dashboard cards.
-router.get('/stats', requireAuth, async (_req, res) => {
+router.get('/stats', requireAuth, async (req, res) => {
   const [students, teachers, classes, unpaid, recentNotices] = await Promise.all([
     Student.countDocuments({ status: 'active' }),
     Teacher.countDocuments({ status: 'active' }),
     Class.countDocuments(),
-    Invoice.countDocuments({ status: { $in: ['unpaid', 'partial'] } }),
+    Invoice.countDocuments({ ...financialScope(req.user), status: { $in: ['unpaid', 'partial'] } }),
     Notice.find().sort({ isPinned: -1, publishedAt: -1 }).limit(5),
   ]);
 
   const dueAgg = await Invoice.aggregate([
-    { $match: { status: { $in: ['unpaid', 'partial'] } } },
-    { $group: { _id: null, due: { $sum: { $subtract: ['$totalAmount', '$paidAmount'] } } } },
+    { $match: { ...financialScope(req.user), status: { $in: ['unpaid', 'partial'] } } },
+    { $group: { _id: null, due: { $sum: { $subtract: [{ $subtract: ['$totalAmount', { $ifNull: ['$waivedAmount', 0] }] }, '$paidAmount'] } } } },
   ]);
 
   res.json({
@@ -36,7 +39,7 @@ router.get('/stats', requireAuth, async (_req, res) => {
 });
 
 // Chart data for the dashboard.
-router.get('/analytics', requireAuth, async (_req, res) => {
+router.get('/analytics', requireAuth, async (req, res) => {
   // Students per class (with bilingual class name).
   const perClassAgg = await Student.aggregate([
     { $match: { status: 'active' } },
@@ -63,19 +66,26 @@ router.get('/analytics', requireAuth, async (_req, res) => {
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
   sixMonthsAgo.setDate(1);
   const payRows = await Payment.aggregate([
-    { $match: { paidAt: { $gte: sixMonthsAgo } } },
+    { $match: { ...financialScope(req.user), paidAt: { $gte: sixMonthsAgo } } },
     {
       $group: {
-        _id: { y: { $year: '$paidAt' }, m: { $month: '$paidAt' } },
+        _id: { y: { $year: { date: '$paidAt', timezone: 'Asia/Dhaka' } }, m: { $month: { date: '$paidAt', timezone: 'Asia/Dhaka' } } },
         total: { $sum: '$amount' },
       },
     },
     { $sort: { '_id.y': 1, '_id.m': 1 } },
   ]);
-  const feeCollection = payRows.map((r) => ({
-    label: `${String(r._id.m).padStart(2, '0')}/${r._id.y}`,
-    total: r.total,
-  }));
+  const refunds = await FeeAdjustment.aggregate([
+    { $match: { ...financialScope(req.user), type: 'refund', status: 'approved', reviewedAt: { $gte: sixMonthsAgo } } },
+    { $group: { _id: { y: { $year: { date: '$reviewedAt', timezone: 'Asia/Dhaka' } }, m: { $month: { date: '$reviewedAt', timezone: 'Asia/Dhaka' } } }, total: { $sum: '$amount' } } },
+  ]);
+  const months = new Map();
+  for (const r of payRows) months.set(`${r._id.y}-${String(r._id.m).padStart(2, '0')}`, r.total);
+  for (const r of refunds) {
+    const key = `${r._id.y}-${String(r._id.m).padStart(2, '0')}`;
+    months.set(key, (months.get(key) || 0) - r.total);
+  }
+  const feeCollection = [...months].sort(([a], [b]) => a.localeCompare(b)).map(([key, total]) => ({ label: `${key.slice(5)}/${key.slice(0, 4)}`, total }));
 
   res.json({ studentsPerClass, attendanceBreakdown, feeCollection });
 });

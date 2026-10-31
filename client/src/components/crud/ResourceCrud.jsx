@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
+import { getAll } from '../../api/getAll.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useToast } from '../ui/Toast.jsx';
 import { t as bt } from '../../utils/bilingual.js';
@@ -50,7 +51,7 @@ export default function ResourceCrud({
   useEffect(() => {
     const keys = Object.keys(refs);
     if (!keys.length) return;
-    Promise.all(keys.map((k) => api.get(refs[k], { params: { limit: 500 } }))).then((responses) => {
+    Promise.all(keys.map((k) => getAll(refs[k]))).then((responses) => {
       const next = {};
       keys.forEach((k, i) => {
         next[k] = responses[i].data.items;

@@ -1,3 +1,5 @@
+import { schoolDate } from '../../utils/schoolDate.js';
+import { getAll } from '../../api/getAll.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
@@ -7,10 +9,11 @@ import DataTable from '../../components/ui/DataTable.jsx';
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
+import PrintDocument, { DocFields, DocItems, DocWords, useDocText } from '../../components/print/PrintDocument.jsx';
 
 const METHODS = ['cash', 'bkash', 'nagad', 'rocket', 'card', 'bank'];
-const thisMonth = () => new Date().toISOString().slice(0, 7);
-const today = () => new Date().toISOString().slice(0, 10);
+const thisMonth = () => schoolDate().slice(0, 7);
+const today = () => schoolDate();
 
 export default function Salaries() {
   const { t, i18n } = useTranslation();
@@ -43,7 +46,7 @@ export default function Salaries() {
   const loadPayments = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get('/finance/salaries');
+      const r = await getAll('/finance/salaries');
       setRows(r.data.items);
     } finally {
       setLoading(false);
@@ -51,7 +54,7 @@ export default function Salaries() {
   }, []);
 
   useEffect(() => {
-    api.get('/people/teachers', { params: { limit: 500 } }).then((r) => setStaff(r.data.items));
+    getAll('/people/teachers', { params: { limit: 500 } }).then((r) => setStaff(r.data.items));
     api.get('/finance/salary-structures').then((r) => setStructures(r.data.items));
     loadPayments();
   }, [loadPayments]);
@@ -283,58 +286,47 @@ export default function Salaries() {
       />
 
       {/* Salary slip modal */}
-      <Modal open={!!slip} onClose={() => setSlip(null)} size="md" title={t('finance.salaries.slip')}>
-        {slip && (
-          <div className="print-area space-y-4">
-            <div className="flex justify-end no-print">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
-              >
-                🖨 {t('common.print')}
-              </button>
-            </div>
-            <div className="text-center">
-              <div className="text-xl font-bold">{t('app.name')}</div>
-              <div className="text-sm text-slate-500">{t('finance.salaries.slip')} · {slip.month}</div>
-            </div>
-            <div className="text-sm">
-              <div className="font-semibold text-slate-800">{bt(slip.staff?.name, lang)}</div>
-              <div className="text-slate-500">{slip.staff?.employeeId}</div>
-            </div>
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-slate-100">
-                <tr>
-                  <td className="py-2 text-slate-600">{t('finance.salaries.basic')}</td>
-                  <td className="py-2 text-right">{taka}{Number(slip.basic).toLocaleString()}</td>
-                </tr>
-                <tr>
-                  <td className="py-2 text-slate-600">{t('finance.salaries.allowances')}</td>
-                  <td className="py-2 text-right">{taka}{Number(slip.allowances).toLocaleString()}</td>
-                </tr>
-                <tr>
-                  <td className="py-2 text-slate-600">{t('finance.salaries.deductions')}</td>
-                  <td className="py-2 text-right">−{taka}{Number(slip.deductions).toLocaleString()}</td>
-                </tr>
-              </tbody>
-              <tfoot className="border-t border-slate-200 font-bold">
-                <tr>
-                  <td className="py-2">{t('finance.salaries.netPay')}</td>
-                  <td className="py-2 text-right">{taka}{Number(slip.net).toLocaleString()}</td>
-                </tr>
-              </tfoot>
-            </table>
-            <div className="text-xs text-slate-500">
-              {t('finance.salaries.paidAt')}: {new Date(slip.paidAt).toLocaleDateString()} ·{' '}
-              {t(`finance.methods.${slip.method}`)}
-            </div>
-          </div>
-        )}
+      <Modal open={!!slip} onClose={() => setSlip(null)} size="lg" title={t('finance.salaries.slip')}>
+        {slip && <SalarySlip slip={slip} />}
       </Modal>
 
       <ConfirmDialog open={!!deleteId} onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />
     </div>
+  );
+}
+
+/** Printable salary slip: employee copy + office copy on one A4 page. */
+function SalarySlip({ slip }) {
+  const { t } = useTranslation();
+  const { d, bt: text, lang, date } = useDocText();
+  const [year, month] = String(slip.month || '').split('-').map(Number);
+  const monthLabel = year && month
+    ? new Intl.DateTimeFormat(lang === 'bn' ? 'bn-BD' : 'en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(Date.UTC(year, month - 1, 1))
+    : slip.month;
+  return (
+    <PrintDocument
+      title={d('salarySlip')}
+      copies={[d('copyEmployee'), d('copyOffice')]}
+      signatures={[d('sigEmployee'), d('sigAccountant'), d('sigPrincipal')]}
+    >
+      <DocFields rows={[
+        [d('employee'), text(slip.staff?.name)],
+        [d('month'), monthLabel],
+        [d('employeeId'), slip.staff?.employeeId],
+        [d('paidOn'), date(slip.paidAt)],
+        [d('designation'), text(slip.staff?.designation)],
+        [d('method'), t(`finance.methods.${slip.method}`)],
+      ]} />
+      <DocItems
+        items={[{ label: d('basic'), amount: slip.basic }, { label: d('allowances'), amount: slip.allowances }]}
+        totals={[
+          { label: d('totalEarnings'), amount: Number(slip.basic) + Number(slip.allowances) },
+          { label: d('totalDeductions'), amount: slip.deductions, minus: true },
+          { label: d('netPay'), amount: slip.net, strong: true },
+        ]}
+      />
+      <DocWords amount={slip.net} />
+    </PrintDocument>
   );
 }
 

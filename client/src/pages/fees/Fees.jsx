@@ -3,18 +3,33 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext.jsx';
 import FeeStructures from './FeeStructures.jsx';
 import Invoices from './Invoices.jsx';
+import BillingSchedules from './BillingSchedules.jsx';
+import CollectFees from './CollectFees.jsx';
+import StudentAccounts from './StudentAccounts.jsx';
+import DuesReports from './DuesReports.jsx';
+import FeeAdjustments from './FeeAdjustments.jsx';
+import { useFeeText } from './FeeUI.jsx';
 
 export default function Fees() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const { f } = useFeeText();
 
   // Only admin/accountant manage fee structures; everyone with access sees invoices.
   const canManageStructures = ['admin', 'accountant'].includes(user.role);
   const tabs = [
     ...(canManageStructures
-      ? [{ key: 'structures', label: t('fees.tabs.structures'), el: <FeeStructures /> }]
-      : []),
-    { key: 'invoices', label: t('fees.tabs.invoices'), el: <Invoices /> },
+      ? [
+          { key: 'setup', label: f('setup'), el: <FeeStructures /> },
+          { key: 'schedules', label: f('schedules'), el: <BillingSchedules /> },
+          { key: 'collect', label: f('collect'), el: <CollectFees /> },
+          { key: 'reports', label: f('reports'), el: <DuesReports /> },
+          { key: 'adjustments', label: f('adjustments'), el: <FeeAdjustments /> },
+        ]
+      : [
+          { key: 'accounts', label: f('accounts'), el: <StudentAccounts /> },
+          { key: 'invoices', label: t('fees.tabs.invoices'), el: <Invoices /> },
+        ]),
   ];
 
   const [active, setActive] = useState(tabs[0].key);
@@ -25,7 +40,7 @@ export default function Fees() {
       <h1 className="text-2xl font-bold text-slate-800">{t('fees.title')}</h1>
 
       {tabs.length > 1 && (
-        <div className="flex gap-1 border-b border-slate-200">
+        <div className="flex flex-wrap gap-1 border-b border-slate-200 no-print">
           {tabs.map((tab) => (
             <button
               type="button"

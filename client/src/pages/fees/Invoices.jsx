@@ -1,3 +1,4 @@
+import { getAll } from '../../api/getAll.js';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
@@ -8,6 +9,7 @@ import DataTable from '../../components/ui/DataTable.jsx';
 import { Select } from '../../components/ui/Field.jsx';
 import InvoiceForm from './InvoiceForm.jsx';
 import InvoiceDetail from './InvoiceDetail.jsx';
+import { due } from './FeeUI.jsx';
 
 const statusBadge = {
   unpaid: 'bg-red-100 text-red-700',
@@ -22,10 +24,6 @@ export default function Invoices() {
   const { push } = useToast();
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
   const canManage = ['admin', 'accountant'].includes(user.role);
-
-  // Students/parents are auto-scoped to their own linked student.
-  const ownStudent =
-    user.role === 'student' ? user.student : user.role === 'parent' ? user.children?.[0] : null;
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -42,15 +40,14 @@ export default function Invoices() {
     try {
       const params = {};
       if (status) params.status = status;
-      if (ownStudent) params.student = ownStudent;
-      const res = await api.get('/fees/invoices', { params });
+      const res = await getAll('/fees/invoices', { params });
       setRows(res.data.items);
     } catch {
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [status, ownStudent]);
+  }, [status]);
 
   useEffect(() => {
     load();
@@ -87,7 +84,7 @@ export default function Invoices() {
       key: 'balance',
       header: t('fees.balance'),
       render: (r) => {
-        const b = r.totalAmount - r.paidAmount;
+        const b = due(r);
         return (
           <span className={b > 0 ? 'font-medium text-red-600' : 'text-slate-400'}>
             {taka}

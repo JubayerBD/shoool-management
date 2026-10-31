@@ -5,3 +5,5 @@ build/
 *.log
 .DS_Store
 server/uploads/
+artifacts/fees-ui/
+.local-backups/

@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "School Management",
+    "name": "Singair Model Alia Madrasa",
     "tagline": "Bilingual school administration"
   },
   "language": {
@@ -201,6 +201,7 @@
     "source": "Source / Payer",
     "payee": "Payee / Vendor",
     "recurring": "Recurring",
+    "recurringNote": "Automatically records future expenses from this date, including missed periods. No bank transfer is made. Disable recurring on the original entry to stop.",
     "frequency": "Frequency",
     "methods": {
       "cash": "Cash",
@@ -320,6 +321,8 @@
     }
   },
   "fees": {
+    "autoGenerate": "Automatically generate student invoices",
+    "billingStart": "First billing date (past dates generate missed bills)",
     "title": "Fees",
     "tabs": {
       "structures": "Fee structures",

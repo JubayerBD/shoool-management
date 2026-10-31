@@ -1,13 +1,13 @@
+import { getAll } from '../../api/getAll.js';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import api from '../../api/client.js';
 import Modal from '../../components/ui/Modal.jsx';
 import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
 import { t as bt } from '../../utils/bilingual.js';
 
 const emptyItem = () => ({ title: { en: '', bn: '' }, amount: '' });
 
-export default function InvoiceForm({ open, onClose, onSubmit, saving }) {
+export default function InvoiceForm({ open, onClose, onSubmit, saving, studentId }) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
 
@@ -22,12 +22,11 @@ export default function InvoiceForm({ open, onClose, onSubmit, saving }) {
 
   useEffect(() => {
     if (!open) return;
-    setForm({ student: '', period: { en: '', bn: '' }, dueDate: '', items: [emptyItem()] });
-    api.get('/people/students', { params: { limit: 200 } }).then((r) => setStudents(r.data.items));
-    api
-      .get('/fees/structures', { params: { limit: 200, isActive: true } })
+    setForm({ student: studentId || '', period: { en: '', bn: '' }, dueDate: '', items: [emptyItem()] });
+    getAll('/people/students', { params: { limit: 200 } }).then((r) => setStudents(r.data.items));
+    getAll('/fees/structures', { params: { limit: 200, isActive: true } })
       .then((r) => setStructures(r.data.items));
-  }, [open]);
+  }, [open, studentId]);
 
   const setItem = (idx, patch) =>
     setForm((f) => ({
@@ -101,7 +100,7 @@ export default function InvoiceForm({ open, onClose, onSubmit, saving }) {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Field label={t('fees.student')} required>
             <Select
-              value={form.student}
+              disabled={!!studentId} value={form.student}
               onChange={(e) => setForm((f) => ({ ...f, student: e.target.value }))}
               required
             >

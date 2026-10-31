@@ -241,6 +241,8 @@ export default function ResourceForm({
       control = (
         <TextInput
           type={f.type === 'number' ? 'number' : 'text'}
+          min={f.min}
+          step={f.step}
           value={form[f.key] ?? ''}
           onChange={(e) => setField(f.key, e.target.value)}
           required={f.required}

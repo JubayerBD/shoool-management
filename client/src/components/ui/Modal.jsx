@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useId } from 'react';
 
 /** Centered modal dialog with backdrop. Close on Esc or backdrop click. */
 export default function Modal({ open, onClose, title, children, footer, size = 'lg' }) {
+  const titleId = useId();
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => e.key === 'Escape' && onClose?.();
@@ -20,9 +21,9 @@ export default function Modal({ open, onClose, title, children, footer, size = '
         onClick={onClose}
         aria-hidden="true"
       />
-      <div className={`relative my-8 w-full ${width} rounded-2xl bg-white shadow-xl`}>
+      <div role="dialog" aria-modal="true" aria-labelledby={titleId} className={`relative my-8 w-full ${width} rounded-2xl bg-white shadow-xl`}>
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
+          <h2 id={titleId} className="text-lg font-semibold text-slate-800">{title}</h2>
           <button
             type="button"
             onClick={onClose}

@@ -1,0 +1,325 @@
+/*
+ * Printed documents (invoice, receipt, voucher, salary slip).
+ * Sized in mm/pt so the paper output matches A4 on any printer. Every element stays
+ * legible if the browser drops background colours or the printer is black & white.
+ */
+
+.doc-print {
+  display: none;
+}
+
+.doc-preview {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8mm 7mm;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.08);
+}
+
+.doc-sheet {
+  --doc-accent: #0b5d3b;
+  --doc-ink: #111827;
+  --doc-muted: #4b5563;
+  --doc-line: #9ca3af;
+  --doc-soft: #eef5f1;
+  color: var(--doc-ink);
+  font-family: 'Noto Sans Bengali', 'Segoe UI', Arial, sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.4;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.doc-copy {
+  position: relative;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* Letterhead */
+.doc-letterhead {
+  display: grid;
+  grid-template-columns: 20mm 1fr 20mm;
+  align-items: center;
+  gap: 4mm;
+  padding-bottom: 2.5mm;
+  border-bottom: 3px double var(--doc-accent);
+}
+.doc-logo {
+  display: flex;
+  width: 20mm;
+  height: 20mm;
+  align-items: center;
+  justify-content: center;
+}
+.doc-logo img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.doc-monogram {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 1.3mm double var(--doc-accent);
+  border-radius: 50%;
+  color: var(--doc-accent);
+  font-size: 7.5pt;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.doc-school {
+  text-align: center;
+}
+.doc-school-bn {
+  color: var(--doc-accent);
+  font-size: 18pt;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.doc-school-en {
+  font-size: 10.5pt;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.doc-school-meta {
+  color: var(--doc-muted);
+  font-size: 8pt;
+}
+
+/* Title row: status stamp (left) · title (centre) · copy label (right) */
+.doc-titlebar {
+  position: relative;
+  display: flex;
+  min-height: 9mm;
+  align-items: center;
+  justify-content: center;
+  margin: 3mm 0;
+}
+.doc-title {
+  border: 0.35mm solid var(--doc-accent);
+  border-radius: 999px;
+  background: var(--doc-soft);
+  padding: 0.8mm 6mm;
+  color: var(--doc-accent);
+  font-size: 10.5pt;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.doc-copy-label {
+  position: absolute;
+  right: 0;
+  border: 0.25mm solid var(--doc-line);
+  border-radius: 1mm;
+  padding: 0.3mm 2mm;
+  color: var(--doc-muted);
+  font-size: 7.5pt;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.doc-stamp {
+  position: absolute;
+  left: 2mm;
+  transform: rotate(-8deg);
+  border: 0.7mm double currentColor;
+  border-radius: 1.5mm;
+  padding: 0.3mm 2.5mm;
+  font-size: 10pt;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+.doc-stamp-paid { color: #15803d; }
+.doc-stamp-partial { color: #b45309; }
+.doc-stamp-unpaid { color: #b91c1c; }
+.doc-stamp-cancelled { color: #6b7280; }
+
+/* Label : value pairs */
+.doc-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 8mm;
+  row-gap: 1.2mm;
+  margin: 0 0 3mm;
+}
+.doc-field {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 1.5mm;
+}
+.doc-field dt {
+  flex: 0 0 auto;
+  color: var(--doc-muted);
+}
+.doc-field dt::after {
+  content: ':';
+}
+.doc-field dd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  border-bottom: 0.2mm dotted var(--doc-line);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* Items table */
+.doc-table {
+  width: 100%;
+  margin-bottom: 3mm;
+  border-collapse: collapse;
+}
+.doc-table th,
+.doc-table td {
+  border: 0.25mm solid var(--doc-line);
+  padding: 1.1mm 2mm;
+  text-align: left;
+  vertical-align: top;
+}
+.doc-table thead th {
+  background: var(--doc-soft);
+  font-size: 8.5pt;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.doc-table .sl {
+  width: 10mm;
+  text-align: center;
+}
+.doc-table .num {
+  width: 34mm;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.doc-table tfoot td {
+  font-weight: 600;
+}
+.doc-table tfoot td.label {
+  text-align: right;
+}
+.doc-table tfoot tr.strong td {
+  border-top: 0.5mm solid var(--doc-ink);
+  background: var(--doc-soft);
+  font-size: 10pt;
+  font-weight: 700;
+}
+.doc-sub {
+  display: block;
+  color: var(--doc-muted);
+  font-size: 8pt;
+  font-weight: 400;
+}
+
+.doc-words {
+  margin: 0 0 3mm;
+  border: 0.25mm solid var(--doc-line);
+  border-left: 1.2mm solid var(--doc-accent);
+  padding: 1.3mm 3mm;
+  font-style: italic;
+}
+.doc-words b {
+  margin-right: 2mm;
+  color: var(--doc-muted);
+  font-style: normal;
+  font-weight: 600;
+}
+.doc-note {
+  margin: 0 0 2mm;
+  color: var(--doc-muted);
+  font-size: 8.5pt;
+}
+
+/* Signatures & footer */
+.doc-signatures {
+  display: grid;
+  gap: 10mm;
+  margin-top: 14mm;
+}
+.doc-sig {
+  text-align: center;
+  font-size: 8.5pt;
+}
+.doc-sig-name {
+  min-height: 4.5mm;
+  font-weight: 600;
+}
+.doc-sig-line {
+  border-top: 0.3mm solid var(--doc-ink);
+  padding-top: 0.8mm;
+  color: var(--doc-muted);
+}
+.doc-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 4mm;
+  margin-top: 3mm;
+  border-top: 0.2mm solid var(--doc-line);
+  padding-top: 1.2mm;
+  color: var(--doc-muted);
+  font-size: 7pt;
+}
+
+/* Two copies on one A4 page, separated by a cut line */
+.doc-cut {
+  position: relative;
+  height: 0;
+  margin: 5mm 0;
+  border-top: 0.3mm dashed #6b7280;
+}
+.doc-cut span {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -55%);
+  background: #fff;
+  padding: 0 2mm;
+  color: #6b7280;
+  font-size: 10pt;
+}
+/* Each copy must stay under ~133mm so two fit on one A4 page. */
+.doc-compact { font-size: 9pt; line-height: 1.35; }
+.doc-compact .doc-letterhead { grid-template-columns: 14mm 1fr 14mm; padding-bottom: 1.5mm; }
+.doc-compact .doc-logo { width: 14mm; height: 14mm; }
+.doc-compact .doc-monogram { font-size: 5.5pt; }
+.doc-compact .doc-school-bn { font-size: 14pt; }
+.doc-compact .doc-school-en { font-size: 9pt; }
+.doc-compact .doc-titlebar { min-height: 7mm; margin: 1.8mm 0; }
+.doc-compact .doc-title { font-size: 9.5pt; }
+.doc-compact .doc-fields { row-gap: 0.6mm; margin-bottom: 2mm; }
+.doc-compact .doc-table { margin-bottom: 2mm; }
+.doc-compact .doc-table th,
+.doc-compact .doc-table td { padding: 0.7mm 2mm; }
+.doc-compact .doc-words { margin-bottom: 2mm; padding: 1mm 3mm; }
+.doc-compact .doc-signatures { margin-top: 8mm; }
+.doc-compact .doc-footer { margin-top: 2mm; }
+
+@page doc {
+  size: A4 portrait;
+  margin: 10mm 12mm;
+}
+
+@media print {
+  html:has(body.doc-printing),
+  body.doc-printing {
+    height: auto !important;
+    background: #fff !important;
+  }
+  /* The print copy is a direct child of <body>; hide everything else, including the app. */
+  body.doc-printing > :not(.doc-print-target) {
+    display: none !important;
+  }
+  body.doc-printing > .doc-print-target {
+    display: block !important;
+    page: doc;
+  }
+  body.doc-printing .doc-print-target,
+  body.doc-printing .doc-print-target * {
+    visibility: visible !important;
+  }
+}
