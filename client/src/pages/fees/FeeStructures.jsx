@@ -1,9 +1,16 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ResourceCrud from '../../components/crud/ResourceCrud.jsx';
+import GenerateInvoiceModal from './GenerateInvoiceModal.jsx';
+import InvoiceDetail from './InvoiceDetail.jsx';
 
 export default function FeeStructures() {
   const { t } = useTranslation();
+  const [invoiceFor, setInvoiceFor] = useState(null); // structure to invoice from
+  const [detailId, setDetailId] = useState(null); // newly created invoice to print
+
   return (
+    <>
     <ResourceCrud
       endpoint="/fees/structures"
       labels={{ title: 'fees.tabs.structures', add: 'fees.addStructure', edit: 'fees.editStructure' }}
@@ -32,6 +39,20 @@ export default function FeeStructures() {
             >
               {r.isActive ? t('common.yes') : t('common.no')}
             </span>
+          ),
+        },
+        {
+          key: 'generate',
+          header: '',
+          className: 'text-right',
+          render: (r) => (
+            <button
+              type="button"
+              onClick={() => setInvoiceFor(r)}
+              className="whitespace-nowrap rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100"
+            >
+              🧾 {t('fees.generate')}
+            </button>
           ),
         },
       ]}
@@ -73,5 +94,22 @@ export default function FeeStructures() {
         { key: 'isActive', type: 'checkbox', label: t('fees.active'), default: true },
       ]}
     />
+
+      <GenerateInvoiceModal
+        structure={invoiceFor}
+        onClose={() => setInvoiceFor(null)}
+        onCreated={(id) => {
+          setInvoiceFor(null);
+          setDetailId(id);
+        }}
+      />
+      <InvoiceDetail
+        open={!!detailId}
+        invoiceId={detailId}
+        onClose={() => setDetailId(null)}
+        canPay
+        onChanged={() => {}}
+      />
+    </>
   );
 }

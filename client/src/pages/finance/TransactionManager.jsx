@@ -8,6 +8,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import ImageUpload from '../../components/ui/ImageUpload.jsx';
 import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
+import TransactionVoucher from './TransactionVoucher.jsx';
 
 const METHODS = ['cash', 'bkash', 'nagad', 'rocket', 'card', 'bank'];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -49,6 +50,7 @@ export default function TransactionManager({ type }) {
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
+  const [voucherTxn, setVoucherTxn] = useState(null);
 
   useEffect(() => {
     api
@@ -168,6 +170,13 @@ export default function TransactionManager({ type }) {
       className: 'text-right',
       render: (r) => (
         <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setVoucherTxn(r)}
+            className="whitespace-nowrap rounded-md border border-brand-200 bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100"
+          >
+            🧾 {isIncome ? t('finance.receiptBtn') : t('finance.voucherBtn')}
+          </button>
           <button
             type="button"
             onClick={() => openEdit(r)}
@@ -388,6 +397,8 @@ export default function TransactionManager({ type }) {
       </Modal>
 
       <ConfirmDialog open={!!deleteId} onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />
+
+      <TransactionVoucher txn={voucherTxn} type={type} onClose={() => setVoucherTxn(null)} />
     </div>
   );
 }
