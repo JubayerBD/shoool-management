@@ -1,0 +1,32 @@
+name: Keep Alive
+
+# Pings the live app so Render's free instance never idles into sleep.
+# GitHub's scheduled runs can be delayed/batched, so each run pings a few
+# times, and we aim well inside Render's ~15-minute idle timeout.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *' # every 10 minutes
+  workflow_dispatch: {} # lets you run it manually from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping health endpoint
+        run: |
+          URL="https://shoool-management.onrender.com/api/health"
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+            echo "Attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "App is awake."
+              exit 0
+            fi
+            sleep 15
+          done
+          # A cold start can exceed the timeout; don't fail the run — the next
+          # scheduled ping will hit an already-warm service.
+          echo "No 200 yet (service may be waking); leaving it for the next run."
+          exit 0
