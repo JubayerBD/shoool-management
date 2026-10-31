@@ -37,7 +37,8 @@
     "fees": "ফি",
     "timetable": "রুটিন",
     "notices": "নোটিশ",
-    "accounts": "অ্যাকাউন্ট"
+    "accounts": "অ্যাকাউন্ট",
+    "finance": "হিসাব"
   },
   "dashboard": {
     "welcome": "স্বাগতম",
@@ -150,6 +151,103 @@
       "4": "বৃহস্পতিবার",
       "5": "শুক্রবার",
       "6": "শনিবার"
+    }
+  },
+  "finance": {
+    "title": "হিসাব",
+    "tabs": {
+      "overview": "সারসংক্ষেপ",
+      "income": "আয়",
+      "expenses": "ব্যয়",
+      "salaries": "বেতন",
+      "reports": "রিপোর্ট",
+      "settings": "সেটিংস"
+    },
+    "income": "আয়",
+    "expense": "ব্যয়",
+    "net": "নিট ব্যালেন্স",
+    "totalIncome": "মোট আয়",
+    "totalExpense": "মোট ব্যয়",
+    "fees": "ফি",
+    "other": "অন্যান্য",
+    "salary": "বেতন",
+    "general": "সাধারণ",
+    "thisMonth": "এই মাস",
+    "thisYear": "এই বছর",
+    "allTime": "সর্বকাল",
+    "from": "থেকে",
+    "to": "পর্যন্ত",
+    "apply": "প্রয়োগ",
+    "category": "খাত",
+    "allCategories": "সব খাত",
+    "amount": "পরিমাণ",
+    "date": "তারিখ",
+    "method": "মাধ্যম",
+    "reference": "রেফারেন্স / লেনদেন নং",
+    "note": "নোট",
+    "receipt": "রসিদ",
+    "source": "উৎস / প্রদানকারী",
+    "payee": "প্রাপক / সরবরাহকারী",
+    "recurring": "পুনরাবৃত্ত",
+    "frequency": "পুনরাবৃত্তি",
+    "methods": {
+      "cash": "নগদ",
+      "bkash": "বিকাশ",
+      "nagad": "নগদ",
+      "rocket": "রকেট",
+      "card": "কার্ড",
+      "bank": "ব্যাংক"
+    },
+    "freq": {
+      "monthly": "মাসিক",
+      "quarterly": "ত্রৈমাসিক",
+      "yearly": "বার্ষিক"
+    },
+    "addIncome": "আয় যোগ করুন",
+    "editIncome": "আয় সম্পাদনা",
+    "addExpense": "ব্যয় যোগ করুন",
+    "editExpense": "ব্যয় সম্পাদনা",
+    "noRecords": "কোনো তথ্য পাওয়া যায়নি",
+    "total": "মোট",
+    "saved": "সংরক্ষিত হয়েছে",
+    "deleted": "মুছে ফেলা হয়েছে",
+    "categories": {
+      "incomeHeads": "আয়ের খাত",
+      "expenseHeads": "ব্যয়ের খাত",
+      "add": "নতুন খাত",
+      "edit": "খাত সম্পাদনা",
+      "nameEn": "নাম (ইংরেজি)",
+      "nameBn": "নাম (বাংলা)",
+      "active": "সক্রিয়",
+      "none": "এখনও কোনো খাত নেই"
+    },
+    "salaries": {
+      "pay": "বেতন প্রদান",
+      "staff": "কর্মী",
+      "selectStaff": "কর্মী নির্বাচন",
+      "month": "মাস (YYYY-MM)",
+      "basic": "মূল বেতন",
+      "allowances": "ভাতা",
+      "deductions": "কর্তন",
+      "netPay": "নিট বেতন",
+      "paidAt": "প্রদানের তারিখ",
+      "structures": "বেতন কাঠামো",
+      "setStructure": "কাঠামো নির্ধারণ",
+      "slip": "বেতন স্লিপ",
+      "paid": "বেতন প্রদান হয়েছে",
+      "noPayments": "এখনও কোনো বেতন প্রদান নেই"
+    },
+    "reports": {
+      "summary": "সারসংক্ষেপ",
+      "incomeByHead": "খাতভিত্তিক আয়",
+      "expenseByHead": "খাতভিত্তিক ব্যয়",
+      "monthlyIncome": "মাসিক আয়",
+      "monthlyExpense": "মাসিক ব্যয়",
+      "ledger": "লেনদেন",
+      "type": "ধরন",
+      "all": "সব",
+      "party": "পক্ষ / বিবরণ",
+      "noData": "এই সময়ের কোনো তথ্য নেই"
     }
   },
   "accounts": {

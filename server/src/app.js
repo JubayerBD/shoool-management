@@ -17,6 +17,7 @@ import feesRoutes from './modules/fees/fees.routes.js';
 import scheduleRoutes from './modules/schedule/schedule.routes.js';
 import dashboardRoutes from './modules/dashboard/dashboard.routes.js';
 import usersRoutes from './modules/users/users.routes.js';
+import financeRoutes from './modules/finance/finance.routes.js';
 import { uploadsRouter, uploadsDir } from './modules/uploads/uploads.routes.js';
 
 export function createApp() {
@@ -56,6 +57,7 @@ export function createApp() {
   app.use('/api/schedule', scheduleRoutes);
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/users', usersRoutes);
+  app.use('/api/finance', financeRoutes);
   app.use('/api/uploads', uploadsRouter);
   // Serve uploaded images (long-cached, immutable filenames).
   app.use('/api/files', express.static(uploadsDir, { maxAge: '30d', immutable: true }));

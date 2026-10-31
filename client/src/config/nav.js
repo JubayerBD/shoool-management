@@ -14,6 +14,7 @@ const ALL = [
   { key: 'fees', to: '/fees' },
   { key: 'timetable', to: '/timetable' },
   { key: 'notices', to: '/notices' },
+  { key: 'finance', to: '/finance' },
   { key: 'accounts', to: '/accounts' },
 ];
 
@@ -21,7 +22,7 @@ const pick = (keys) => ALL.filter((item) => keys.includes(item.key));
 
 export const NAV_BY_ROLE = {
   admin: ALL,
-  accountant: pick(['dashboard', 'students', 'fees', 'notices']),
+  accountant: pick(['dashboard', 'students', 'fees', 'finance', 'notices']),
   teacher: pick(['dashboard', 'students', 'attendance', 'exams', 'timetable', 'notices']),
   student: pick(['dashboard', 'attendance', 'exams', 'fees', 'timetable', 'notices']),
   parent: pick(['dashboard', 'attendance', 'exams', 'fees', 'notices']),

@@ -37,7 +37,8 @@
     "fees": "Fees",
     "timetable": "Timetable",
     "notices": "Notices",
-    "accounts": "Accounts"
+    "accounts": "Accounts",
+    "finance": "Finance"
   },
   "dashboard": {
     "welcome": "Welcome",
@@ -150,6 +151,103 @@
       "4": "Thursday",
       "5": "Friday",
       "6": "Saturday"
+    }
+  },
+  "finance": {
+    "title": "Finance",
+    "tabs": {
+      "overview": "Overview",
+      "income": "Income",
+      "expenses": "Expenses",
+      "salaries": "Salaries",
+      "reports": "Reports",
+      "settings": "Settings"
+    },
+    "income": "Income",
+    "expense": "Expense",
+    "net": "Net balance",
+    "totalIncome": "Total income",
+    "totalExpense": "Total expense",
+    "fees": "Fees",
+    "other": "Other",
+    "salary": "Salary",
+    "general": "General",
+    "thisMonth": "This month",
+    "thisYear": "This year",
+    "allTime": "All time",
+    "from": "From",
+    "to": "To",
+    "apply": "Apply",
+    "category": "Category",
+    "allCategories": "All categories",
+    "amount": "Amount",
+    "date": "Date",
+    "method": "Method",
+    "reference": "Reference / Txn no.",
+    "note": "Note",
+    "receipt": "Receipt",
+    "source": "Source / Payer",
+    "payee": "Payee / Vendor",
+    "recurring": "Recurring",
+    "frequency": "Frequency",
+    "methods": {
+      "cash": "Cash",
+      "bkash": "bKash",
+      "nagad": "Nagad",
+      "rocket": "Rocket",
+      "card": "Card",
+      "bank": "Bank"
+    },
+    "freq": {
+      "monthly": "Monthly",
+      "quarterly": "Quarterly",
+      "yearly": "Yearly"
+    },
+    "addIncome": "Add income",
+    "editIncome": "Edit income",
+    "addExpense": "Add expense",
+    "editExpense": "Edit expense",
+    "noRecords": "No records found",
+    "total": "Total",
+    "saved": "Saved",
+    "deleted": "Deleted",
+    "categories": {
+      "incomeHeads": "Income heads",
+      "expenseHeads": "Expense heads",
+      "add": "Add category",
+      "edit": "Edit category",
+      "nameEn": "Name (English)",
+      "nameBn": "Name (বাংলা)",
+      "active": "Active",
+      "none": "No categories yet"
+    },
+    "salaries": {
+      "pay": "Pay salary",
+      "staff": "Staff",
+      "selectStaff": "Select staff",
+      "month": "Month (YYYY-MM)",
+      "basic": "Basic",
+      "allowances": "Allowances",
+      "deductions": "Deductions",
+      "netPay": "Net pay",
+      "paidAt": "Paid on",
+      "structures": "Salary structure",
+      "setStructure": "Set structure",
+      "slip": "Salary slip",
+      "paid": "Salary paid",
+      "noPayments": "No salary payments yet"
+    },
+    "reports": {
+      "summary": "Summary",
+      "incomeByHead": "Income by head",
+      "expenseByHead": "Expense by head",
+      "monthlyIncome": "Monthly income",
+      "monthlyExpense": "Monthly expense",
+      "ledger": "Transactions",
+      "type": "Type",
+      "all": "All",
+      "party": "Party / Details",
+      "noData": "No data for this period"
     }
   },
   "accounts": {

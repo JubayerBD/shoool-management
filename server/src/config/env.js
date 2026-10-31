@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
 
-dotenv.config();
+// Resolve configuration from the server directory, regardless of launch folder.
+dotenv.config({ path: fileURLToPath(new URL('../../.env', import.meta.url)) });
 
 const required = ['MONGO_URI', 'JWT_SECRET'];
 for (const key of required) {

@@ -13,6 +13,7 @@ import Fees from './pages/fees/Fees.jsx';
 import Timetable from './pages/timetable/Timetable.jsx';
 import Notices from './pages/notices/Notices.jsx';
 import Accounts from './pages/accounts/Accounts.jsx';
+import Finance from './pages/finance/Finance.jsx';
 import Classes from './pages/academics/Classes.jsx';
 import Sections from './pages/academics/Sections.jsx';
 import Subjects from './pages/academics/Subjects.jsx';
@@ -74,6 +75,14 @@ export default function App() {
                 element={
                   <ProtectedRoute roles={['admin']}>
                     <Accounts />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="finance"
+                element={
+                  <ProtectedRoute roles={['admin', 'accountant']}>
+                    <Finance />
                   </ProtectedRoute>
                 }
               />
