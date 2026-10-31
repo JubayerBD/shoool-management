@@ -7,6 +7,7 @@ import 'express-async-errors';
 
 import { env } from './config/env.js';
 import { notFoundHandler, errorHandler } from './middleware/error.js';
+import { securityHeaders } from './middleware/security.js';
 
 import authRoutes from './modules/auth/auth.routes.js';
 import academicsRoutes from './modules/academics/academics.routes.js';
@@ -22,6 +23,9 @@ import { uploadsRouter, uploadsDir } from './modules/uploads/uploads.routes.js';
 
 export function createApp() {
   const app = express();
+  app.disable('x-powered-by');
+  app.set('trust proxy', 1); // behind Render's proxy: real client IP + req.secure
+  app.use(securityHeaders);
 
   // CORS: allow non-browser tools, whitelisted origins, and — importantly —
   // the app's own origin (same-origin requests when the API also serves the

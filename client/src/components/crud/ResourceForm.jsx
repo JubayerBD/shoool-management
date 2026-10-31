@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Modal from '../ui/Modal.jsx';
 import BilingualInput from '../ui/BilingualInput.jsx';
@@ -56,12 +56,15 @@ export default function ResourceForm({
   const [form, setForm] = useState({});
   const [account, setAccount] = useState({ create: false, email: '', password: '' });
 
-  useEffect(() => {
+  // Reset during render (not in an effect) so the form never shows, or loses typing to, stale values.
+  const [seen, setSeen] = useState({ open: false, record: null });
+  if (seen.open !== open || seen.record !== record) {
+    setSeen({ open, record });
     if (open) {
       setForm(initialForm(fields, record));
       setAccount({ create: false, email: '', password: '' });
     }
-  }, [open, record, fields]);
+  }
 
   const setField = (key, value) => setForm((f) => ({ ...f, [key]: value }));
 

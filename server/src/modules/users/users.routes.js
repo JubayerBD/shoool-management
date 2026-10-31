@@ -110,6 +110,9 @@ router.put('/:id', ...adminOnly, validate(updateSchema), async (req, res) => {
   }
   // Role change re-scopes the profile links.
   const effectiveRole = role || user.role;
+  if (role && role !== user.role && String(user.id) === String(req.user._id)) {
+    throw ApiError.badRequest('You cannot change your own role');
+  }
   if (role) user.role = role;
   const links = linksForRole(effectiveRole, {
     student: req.body.student !== undefined ? req.body.student : user.student,

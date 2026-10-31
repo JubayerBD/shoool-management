@@ -28,6 +28,18 @@ export function errorHandler(err, _req, res, _next) {
     );
   }
 
+  // File upload limits (multer)
+  if (err.name === 'MulterError') {
+    statusCode = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    message = err.code === 'LIMIT_FILE_SIZE' ? 'File is too large' : err.message;
+  }
+
+  // Malformed JSON body
+  if (err.type === 'entity.parse.failed') {
+    statusCode = 400;
+    message = 'Malformed JSON body';
+  }
+
   // Bad ObjectId
   if (err.name === 'CastError') {
     statusCode = 400;

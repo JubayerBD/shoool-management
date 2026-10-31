@@ -8,6 +8,7 @@ import { Notice } from '../../models/Schedule.js';
 
 import { FeeAdjustment } from '../../models/FeeWorkflow.js';
 import { studentScope } from '../../utils/feeAccess.js';
+import { noticeScopeFor } from '../../utils/access.js';
 const financialScope = (user) => ['admin', 'accountant', 'student', 'parent'].includes(user.role) ? studentScope(user) : { _id: null };
 const router = Router();
 
@@ -18,7 +19,7 @@ router.get('/stats', requireAuth, async (req, res) => {
     Teacher.countDocuments({ status: 'active' }),
     Class.countDocuments(),
     Invoice.countDocuments({ ...financialScope(req.user), status: { $in: ['unpaid', 'partial'] } }),
-    Notice.find().sort({ isPinned: -1, publishedAt: -1 }).limit(5),
+    Notice.find(noticeScopeFor(req.user) || {}).sort({ isPinned: -1, publishedAt: -1 }).limit(5),
   ]);
 
   const dueAgg = await Invoice.aggregate([

@@ -9,6 +9,7 @@ import {
   SalaryPayment,
 } from '../../models/Finance.js';
 import { Payment } from '../../models/Fees.js';
+import { Teacher } from '../../models/People.js';
 import { FeeAdjustment } from '../../models/FeeWorkflow.js';
 import { rangeFilter, schoolDate, parseDay } from '../../utils/financeDates.js';
 import { pagination, paginated } from '../../utils/pagination.js';
@@ -17,6 +18,30 @@ const router = Router();
 const finance = [requireAuth, requireRole('admin', 'accountant')];
 
 /* ----------------------------- helpers ----------------------------- */
+
+/** A positive taka amount with at most 2 decimal places. */
+function parseAmount(raw, label = 'Amount') {
+  const n = typeof raw === 'string' && raw.trim() === '' ? NaN : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) throw ApiError.badRequest(`${label} must be greater than zero`);
+  if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) throw ApiError.badRequest(`${label} can have at most 2 decimal places`);
+  return n;
+}
+
+/** A zero-or-positive amount with at most 2 decimal places (salary parts). */
+function parseNonNegative(raw, label) {
+  const n = raw === undefined || raw === null || raw === '' ? 0 : Number(raw);
+  if (!Number.isFinite(n) || n < 0) throw ApiError.badRequest(`${label} cannot be negative`);
+  if (Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) throw ApiError.badRequest(`${label} can have at most 2 decimal places`);
+  return n;
+}
+
+/** Category (when given) must exist and match the entry type. */
+async function checkCategory(categoryId, type) {
+  if (!categoryId) return;
+  const category = await FinanceCategory.findById(categoryId).select('type');
+  if (!category) throw ApiError.badRequest('Category not found');
+  if (category.type !== type) throw ApiError.badRequest(`Choose an ${type} category`);
+}
 
 async function sum(Model, match, field = 'amount') {
   const rows = await Model.aggregate([
@@ -53,6 +78,13 @@ router.put('/categories/:id', ...finance, async (req, res) => {
 });
 
 router.delete('/categories/:id', ...finance, async (req, res) => {
+  const [usedIncome, usedExpense] = await Promise.all([
+    Income.exists({ category: req.params.id }),
+    Expense.exists({ category: req.params.id }),
+  ]);
+  if (usedIncome || usedExpense) {
+    throw ApiError.conflict('This category has entries. Deactivate it instead of deleting it.');
+  }
   const item = await FinanceCategory.findByIdAndDelete(req.params.id);
   if (!item) throw ApiError.notFound('Category not found');
   res.json({ ok: true, id: req.params.id });
@@ -70,7 +102,8 @@ router.get('/income', ...finance, async (req, res) => {
 });
 
 router.post('/income', ...finance, async (req, res) => {
-  const body = { ...req.body, amount: Number(req.body.amount), recordedBy: req.user._id };
+  const body = { ...req.body, amount: parseAmount(req.body.amount), recordedBy: req.user._id };
+  await checkCategory(body.category, 'income');
   if (typeof body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.date)) body.date = parseDay(body.date);
   delete body.generationKey;
   delete body.recurringSource;
@@ -79,7 +112,8 @@ router.post('/income', ...finance, async (req, res) => {
 });
 
 router.put('/income/:id', ...finance, async (req, res) => {
-  if (req.body.amount !== undefined) req.body.amount = Number(req.body.amount);
+  if (req.body.amount !== undefined) req.body.amount = parseAmount(req.body.amount);
+  if (req.body.category) await checkCategory(req.body.category, 'income');
   if (typeof req.body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date)) req.body.date = parseDay(req.body.date);
   delete req.body.generationKey;
   delete req.body.recurringSource;
@@ -107,7 +141,8 @@ router.get('/expenses', ...finance, async (req, res) => {
 });
 
 router.post('/expenses', ...finance, async (req, res) => {
-  const body = { ...req.body, amount: Number(req.body.amount), recordedBy: req.user._id };
+  const body = { ...req.body, amount: parseAmount(req.body.amount), recordedBy: req.user._id };
+  await checkCategory(body.category, 'expense');
   if (typeof body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.date)) body.date = parseDay(body.date);
   delete body.generationKey;
   delete body.recurringSource;
@@ -116,7 +151,8 @@ router.post('/expenses', ...finance, async (req, res) => {
 });
 
 router.put('/expenses/:id', ...finance, async (req, res) => {
-  if (req.body.amount !== undefined) req.body.amount = Number(req.body.amount);
+  if (req.body.amount !== undefined) req.body.amount = parseAmount(req.body.amount);
+  if (req.body.category) await checkCategory(req.body.category, 'expense');
   if (typeof req.body.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date)) req.body.date = parseDay(req.body.date);
   delete req.body.generationKey;
   delete req.body.recurringSource;
@@ -143,9 +179,10 @@ router.get('/salary-structures', ...finance, async (_req, res) => {
 router.post('/salary-structures', ...finance, async (req, res) => {
   const { staff, basic, allowances, isActive } = req.body;
   if (!staff) throw ApiError.badRequest('Staff is required');
+  if (!(await Teacher.exists({ _id: staff }))) throw ApiError.badRequest('Staff member not found');
   const item = await SalaryStructure.findOneAndUpdate(
     { staff },
-    { staff, basic: Number(basic) || 0, allowances: Number(allowances) || 0, isActive: isActive !== false },
+    { staff, basic: parseNonNegative(basic, 'Basic salary'), allowances: parseNonNegative(allowances, 'Allowances'), isActive: isActive !== false },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   ).populate('staff', 'name employeeId');
   res.json({ item });
@@ -164,16 +201,21 @@ router.get('/salaries', ...finance, async (req, res) => {
 router.post('/salaries', ...finance, async (req, res) => {
   const { staff, month, basic = 0, allowances = 0, deductions = 0, method, note, paidAt } = req.body;
   if (!staff || !month) throw ApiError.badRequest('Staff and month are required');
-  const net = Number(basic) + Number(allowances) - Number(deductions);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) throw ApiError.badRequest('Month must look like 2026-10');
+  if (!(await Teacher.exists({ _id: staff }))) throw ApiError.badRequest('Staff member not found');
+  const parts = {
+    basic: parseNonNegative(basic, 'Basic salary'),
+    allowances: parseNonNegative(allowances, 'Allowances'),
+    deductions: parseNonNegative(deductions, 'Deductions'),
+  };
+  const net = Math.round((parts.basic + parts.allowances - parts.deductions) * 100) / 100;
   if (net < 0) throw ApiError.badRequest('Net salary cannot be negative');
   const existing = await SalaryPayment.findOne({ staff, month });
   if (existing) throw ApiError.conflict('Salary for this staff and month is already paid');
   const item = await SalaryPayment.create({
     staff,
     month,
-    basic: Number(basic),
-    allowances: Number(allowances),
-    deductions: Number(deductions),
+    ...parts,
     net,
     method: method || 'cash',
     note: note || '',

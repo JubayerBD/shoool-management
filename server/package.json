@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "test": "node --test test/finance.test.js",
+    "test": "node --test test/finance.test.js test/security.test.js",
     "test:ui": "node test/fees-ui.mjs",
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",

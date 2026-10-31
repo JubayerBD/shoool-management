@@ -11,6 +11,8 @@ import { paginated } from '../../utils/pagination.js';
 import { parseDay } from '../../utils/financeDates.js';
 
 import workflowRoutes from './workflow.routes.js';
+import { FeePlan, BillingSchedule } from '../../models/FeeWorkflow.js';
+import { blockIfInUse } from '../../utils/inUse.js';
 import { studentScope, amountDue, updateInvoiceStatus } from '../../utils/feeAccess.js';
 
 const router = Router();
@@ -22,6 +24,7 @@ const structures = crudController(FeeStructure, {
   populate: ['class', 'academicYear'],
   searchable: ['name.en', 'name.bn'],
   filterable: ['class', 'academicYear', 'frequency', 'isActive'],
+  guardRemove: blockIfInUse([[FeePlan, 'items.feeType', 'fee plans'], [BillingSchedule, 'feeTypes', 'billing schedules']]),
 });
 
 router.get('/structures', requireAuth, structures.list);

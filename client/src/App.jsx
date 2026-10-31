@@ -63,8 +63,22 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route path="exams" element={<Exams />} />
-              <Route path="fees" element={<Fees />} />
+              <Route
+                path="exams"
+                element={
+                  <ProtectedRoute roles={['admin', 'teacher', 'student', 'parent']}>
+                    <Exams />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="fees"
+                element={
+                  <ProtectedRoute roles={['admin', 'accountant', 'student', 'parent']}>
+                    <Fees />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="timetable"
                 element={<Timetable />}

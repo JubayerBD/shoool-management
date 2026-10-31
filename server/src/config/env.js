@@ -12,6 +12,11 @@ for (const key of required) {
   }
 }
 
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  // eslint-disable-next-line no-console
+  console.error('[env] SECURITY: JWT_SECRET is not set in production. Anyone can forge login tokens. Set a long random JWT_SECRET now.');
+}
+
 export const env = {
   port: Number(process.env.PORT) || 5000,
   nodeEnv: process.env.NODE_ENV || 'development',

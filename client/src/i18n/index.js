@@ -24,4 +24,9 @@ i18n
     },
   });
 
+// Keep <html lang> in sync so screen readers, spell-check and font selection follow the UI language.
+const syncHtmlLang = (lng) => { document.documentElement.lang = lng?.startsWith('bn') ? 'bn' : 'en'; };
+i18n.on('languageChanged', syncHtmlLang);
+syncHtmlLang(i18n.language);
+
 export default i18n;

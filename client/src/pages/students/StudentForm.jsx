@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Modal from '../../components/ui/Modal.jsx';
 import BilingualInput from '../../components/ui/BilingualInput.jsx';
@@ -52,12 +52,15 @@ export default function StudentForm({ open, onClose, onSubmit, student, classes,
   const [form, setForm] = useState(emptyStudent());
   const [account, setAccount] = useState({ create: false, email: '', password: '' });
 
-  useEffect(() => {
+  // Reset during render (not in an effect) so the form never shows, or loses typing to, stale values.
+  const [seen, setSeen] = useState({ open: false, student: null });
+  if (seen.open !== open || seen.student !== student) {
+    setSeen({ open, student });
     if (open) {
       setForm(toForm(student));
       setAccount({ create: false, email: '', password: '' });
     }
-  }, [open, student]);
+  }
 
   // Sections belonging to the chosen class.
   const sectionOptions = useMemo(

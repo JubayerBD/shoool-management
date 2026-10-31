@@ -8,7 +8,15 @@ const academicYearSchema = new Schema(
   {
     name: { type: bilingual({ requiredEn: true }), required: true },
     startDate: { type: Date, required: true },
-    endDate: { type: Date, required: true },
+    endDate: {
+      type: Date,
+      required: true,
+      validate: {
+        // On updates `this` is a query without startDate, so only compare when both are known.
+        validator(value) { return !this.startDate || !(this.startDate instanceof Date) || value > this.startDate; },
+        message: 'End date must be after the start date',
+      },
+    },
     isCurrent: { type: Boolean, default: false, index: true },
   },
   baseSchemaOptions
@@ -30,7 +38,7 @@ const sectionSchema = new Schema(
     name: { type: bilingual({ requiredEn: true }), required: true },
     class: { type: Schema.Types.ObjectId, ref: 'Class', required: true, index: true },
     classTeacher: { type: Schema.Types.ObjectId, ref: 'Teacher' },
-    capacity: { type: Number, default: 60 },
+    capacity: { type: Number, default: 60, min: [1, 'Capacity must be at least 1'] },
     room: { type: String, trim: true, default: '' },
   },
   baseSchemaOptions
@@ -42,8 +50,16 @@ const subjectSchema = new Schema(
     name: { type: bilingual({ requiredEn: true }), required: true },
     code: { type: String, trim: true, uppercase: true, index: true },
     class: { type: Schema.Types.ObjectId, ref: 'Class', index: true },
-    fullMarks: { type: Number, default: 100 },
-    passMarks: { type: Number, default: 33 },
+    fullMarks: { type: Number, default: 100, min: [1, 'Full marks must be at least 1'] },
+    passMarks: {
+      type: Number,
+      default: 33,
+      min: [0, 'Pass marks cannot be negative'],
+      validate: {
+        validator(value) { return typeof this.fullMarks !== 'number' || value <= this.fullMarks; },
+        message: 'Pass marks cannot exceed full marks',
+      },
+    },
     isOptional: { type: Boolean, default: false },
   },
   baseSchemaOptions

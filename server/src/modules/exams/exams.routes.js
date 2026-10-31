@@ -7,6 +7,11 @@ import { Exam, Mark } from '../../models/Exam.js';
 import { Student } from '../../models/People.js';
 import { Section, Subject } from '../../models/Academic.js';
 import { gradeFromMarks } from '../../utils/grading.js';
+import { ApiError } from '../../utils/ApiError.js';
+import { blockIfInUse } from '../../utils/inUse.js';
+import { assertStudentAccess, isSelfService, ownStudentIds, requireAcademicAccess } from '../../utils/access.js';
+
+const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
 
 const router = Router();
 
@@ -16,26 +21,39 @@ const exams = crudController(Exam, {
   searchable: ['name.en', 'name.bn'],
   filterable: ['academicYear', 'isPublished'],
   defaultSort: { startDate: -1 },
+  guardRemove: blockIfInUse([[Mark, 'exam', 'entered marks']]),
 });
 
-router.get('/exams', requireAuth, exams.list);
-router.get('/exams/:id', requireAuth, exams.get);
+// Students/parents only see exams whose results have been published.
+const publishedOnly = (req, _res, next) => {
+  if (isSelfService(req.user)) req.query.isPublished = 'true';
+  next();
+};
+router.get('/exams', requireAuth, publishedOnly, exams.list);
+router.get('/exams/:id', requireAuth, async (req, res, next) => {
+  if (isSelfService(req.user) && !(await Exam.exists({ _id: req.params.id, isPublished: true }))) {
+    throw ApiError.notFound('Exam not found');
+  }
+  next();
+}, exams.get);
 router.post('/exams', requireAuth, requireRole('admin'), exams.create);
 router.put('/exams/:id', requireAuth, requireRole('admin'), exams.update);
 router.delete('/exams/:id', requireAuth, requireRole('admin'), exams.remove);
 
 /* ---- Marks entry ---- */
 const marksSchema = z.object({
-  exam: z.string().min(1),
+  exam: objectId,
   marks: z
     .array(
-      z.object({
-        student: z.string().min(1),
-        subject: z.string().min(1),
-        marksObtained: z.number().min(0),
-        fullMarks: z.number().min(1).default(100),
-        remark: z.string().optional(),
-      })
+      z
+        .object({
+          student: objectId,
+          subject: objectId,
+          marksObtained: z.number().min(0),
+          fullMarks: z.number().min(1).default(100),
+          remark: z.string().optional(),
+        })
+        .refine((m) => m.marksObtained <= m.fullMarks, { message: 'Marks obtained cannot exceed full marks', path: ['marksObtained'] })
     )
     .min(1),
 });
@@ -48,6 +66,7 @@ router.post(
   validate(marksSchema),
   async (req, res) => {
     const { exam, marks } = req.body;
+    if (!(await Exam.exists({ _id: exam }))) throw ApiError.badRequest('Exam not found');
     const ops = marks.map((m) => {
       const { grade, gradePoint } = gradeFromMarks(m.marksObtained, m.fullMarks);
       return {
@@ -78,10 +97,17 @@ router.post(
 // Raw marks list (e.g. mark-entry grid), filter by exam/student/subject.
 router.get('/marks', requireAuth, async (req, res) => {
   const { exam, student, subject } = req.query;
+  requireAcademicAccess(req.user);
   const filter = {};
   if (exam) filter.exam = exam;
-  if (student) filter.student = student;
   if (subject) filter.subject = subject;
+  if (isSelfService(req.user)) {
+    // Own family only, and only for exams whose results are published.
+    if (student) assertStudentAccess(req.user, student);
+    filter.student = student || { $in: ownStudentIds(req.user) };
+    const published = await Exam.find({ isPublished: true }).distinct('_id');
+    filter.exam = exam ? { $in: published.filter((id) => String(id) === String(exam)) } : { $in: published };
+  } else if (student) filter.student = student;
   const items = await Mark.find(filter)
     .populate('subject', 'name code fullMarks')
     .populate('student', 'name admissionNo roll');
@@ -91,7 +117,7 @@ router.get('/marks', requireAuth, async (req, res) => {
 /* ---- Tabulation: whole section across one exam (marks grid + rank) ---- */
 router.get('/tabulation', requireAuth, requireRole('admin', 'teacher'), async (req, res) => {
   const { exam, section } = req.query;
-  if (!exam || !section) throw new Error('exam and section are required');
+  if (!exam || !section) throw ApiError.badRequest('exam and section are required');
 
   const sectionDoc = await Section.findById(section).lean();
   const classId = sectionDoc?.class;
@@ -165,7 +191,7 @@ router.get('/tabulation', requireAuth, requireRole('admin', 'teacher'), async (r
 /* ---- Batch report cards: every student in a section for one exam ---- */
 router.get('/report-cards', requireAuth, requireRole('admin', 'teacher'), async (req, res) => {
   const { exam, section } = req.query;
-  if (!exam || !section) throw new Error('exam and section are required');
+  if (!exam || !section) throw ApiError.badRequest('exam and section are required');
 
   const students = await Student.find({ section })
     .sort({ roll: 1 })
@@ -204,6 +230,11 @@ router.get('/report-cards', requireAuth, requireRole('admin', 'teacher'), async 
 /* ---- Report card: one student across one exam ---- */
 router.get('/report-card', requireAuth, async (req, res) => {
   const { exam, student } = req.query;
+  if (!exam || !student) throw ApiError.badRequest('exam and student are required');
+  assertStudentAccess(req.user, student);
+  if (isSelfService(req.user) && !(await Exam.exists({ _id: exam, isPublished: true }))) {
+    throw ApiError.forbidden('Results for this exam have not been published yet');
+  }
   const marks = await Mark.find({ exam, student }).populate('subject', 'name code fullMarks');
 
   const totalObtained = marks.reduce((s, m) => s + m.marksObtained, 0);
@@ -222,7 +253,7 @@ router.get('/report-card', requireAuth, async (req, res) => {
       totalFull,
       percentage: totalFull ? Math.round((totalObtained / totalFull) * 100) : 0,
       gpa: failed ? 0 : gpa,
-      result: failed ? 'Fail' : 'Pass',
+      result: marks.length === 0 ? '-' : failed ? 'Fail' : 'Pass',
     },
   });
 });
