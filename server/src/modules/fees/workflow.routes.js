@@ -102,6 +102,21 @@ router.post('/schedules/:id/status', ...admins, validate(z.object({ status: z.en
   res.json({ item });
 });
 
+router.put('/schedules/:id/timing', ...admins, validate(z.object({ name: z.string().trim().min(1), endDate: z.string(), dueDays: z.number().int().min(0).max(90),
+  componentRules: z.array(z.object({ feeType: id, startDate: z.string(), intervalMonths: z.number().int().min(0).max(12) })).min(1) })), async (req, res) => {
+  // Approved schedules keep their plan, students and fees; only timing for future invoices can change.
+  const current = await BillingSchedule.findOne({ _id: req.params.id, status: { $in: ['active', 'paused'] } });
+  if (!current) throw ApiError.conflict('Only approved, unfinished schedules can be edited');
+  await previewSchedule({ ...current.toObject(), id: current.id, ...req.body });
+  const item = await BillingSchedule.findOneAndUpdate({ _id: req.params.id, status: { $in: ['active', 'paused'] } },
+    { ...req.body, $inc: { billingRevision: 1 } }, { new: true, runValidators: true });
+  if (!item) throw ApiError.conflict('Only approved, unfinished schedules can be edited');
+  let billingError;
+  if (item.status === 'active') {
+    try { await generateScheduleInvoices(item); } catch (err) { billingError = 'Saved; invoice generation will retry automatically.'; console.error('[billing]', err.message); }
+  }
+  res.json({ item, billingError });
+});
 router.get('/schedules/:id/cancellation-preview', ...admins, async (req, res) => {
   const item = await BillingSchedule.findById(req.params.id);
   if (!item) throw ApiError.notFound('Schedule not found');

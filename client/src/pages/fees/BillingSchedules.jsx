@@ -16,7 +16,7 @@ export default function BillingSchedules() {
   const [rows, setRows] = useState([]), [form, setForm] = useState(blank), [editing, setEditing] = useState('');
   const [open, setOpen] = useState(false), [preview, setPreview] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [cancelling, setCancelling] = useState(null), [cancelInfo, setCancelInfo] = useState(null), [cancelReason, setCancelReason] = useState(''), [showCancelled, setShowCancelled] = useState(false);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(''), [timing, setTiming] = useState(null);
   const load = () => getAll('/fees/schedules').then((r) => setRows(r.data.items)).catch((err) => setError(err.response?.data?.error?.message || f('error')));
   useEffect(() => { load(); }, []);
   const plan = refs.plans.find((item) => recordId(item) === form.plan);
@@ -79,6 +79,17 @@ export default function BillingSchedules() {
     catch (err) { setError(err.response?.data?.error?.message || f('error')); }
     finally { setBusy(false); }
   };
+  const timingRule = (feeType) => timing.componentRules.find((rule) => rule.feeType === feeType);
+  const timingPatch = (feeType, patch) => setTiming((old) => ({ ...old, componentRules: old.componentRules.map((rule) => rule.feeType === feeType ? { ...rule, ...patch } : rule) }));
+  const saveTiming = async (event) => {
+    event.preventDefault(); setBusy(true); setError('');
+    try {
+      const { name, endDate, dueDays, componentRules } = timing;
+      const response = await api.put(`/fees/schedules/${timing.id}/timing`, { name, endDate, dueDays: Number(dueDays), componentRules });
+      setTiming(null); setError(response.data.billingError || ''); await load();
+    } catch (err) { setError(err.response?.data?.error?.message || f('error')); }
+    finally { setBusy(false); }
+  };
   const beginCancellation = async (row) => {
     setBusy(true); setError(''); setCancelInfo(null); setCancelReason(''); setCancelling(row);
     try { setCancelInfo((await api.get(`/fees/schedules/${recordId(row)}/cancellation-preview`)).data); }
@@ -103,8 +114,27 @@ export default function BillingSchedules() {
       { key: 'actions', header: '', render: (row) => <div className="flex gap-2">{row.status === 'draft' ? <>
         <button disabled={busy} className={buttonClass} onClick={() => { setEditing(recordId(row)); setForm({ ...row, plan: recordId(row.plan) }); setSearch(''); setError(''); setOpen(true); }}>{f('edit')}</button>
         <button disabled={busy} className={buttonClass} onClick={() => reviewSaved(row)}>{f('preview')}</button>
-      </> : user.role === 'admin' && ['active', 'paused'].includes(row.status) && <button disabled={busy} className={buttonClass} onClick={() => status(row)}>{f(row.status === 'active' ? 'pause' : 'resume')}</button>}{user.role === 'admin' && row.status !== 'cancelled' && <button disabled={busy} className={buttonClass + ' text-red-700'} onClick={() => beginCancellation(row)}>{f('cancelSchedule')}</button>}{row.status === 'cancelled' && <span className="text-xs text-slate-500">{row.cancellationReason}</span>}</div> },
+      </> : user.role === 'admin' && ['active', 'paused'].includes(row.status) && <><button disabled={busy} className={buttonClass} onClick={() => { setError(''); setTiming({ id: recordId(row), name: row.name, endDate: row.endDate, dueDays: row.dueDays, startDate: row.startDate, plan: row.plan,
+          componentRules: row.feeTypes.map((feeType) => row.componentRules?.find((rule) => String(rule.feeType) === String(feeType)) || { feeType: String(feeType), startDate: row.startDate, intervalMonths: { monthly: 1, quarterly: 3, yearly: 12, one_time: 0 }[row.frequency] ?? 1 }).map((rule) => ({ ...rule, feeType: String(rule.feeType) })) }); }}>{f('editTiming')}</button>
+        <button disabled={busy} className={buttonClass} onClick={() => status(row)}>{f(row.status === 'active' ? 'pause' : 'resume')}</button></>}{user.role === 'admin' && row.status !== 'cancelled' && <button disabled={busy} className={buttonClass + ' text-red-700'} onClick={() => beginCancellation(row)}>{f('cancelSchedule')}</button>}{row.status === 'cancelled' && <span className="text-xs text-slate-500">{row.cancellationReason}</span>}</div> },
     ]} />
+    <Modal open={!!timing} onClose={() => !busy && setTiming(null)} size="xl" title={f('editTimingTitle')}>
+      {timing && <form onSubmit={saveTiming} className="space-y-4"><ErrorNotice error={error} /><Notice>{f('editTimingHint')}</Notice>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label={f('name')} required><TextInput required value={timing.name} onChange={(e) => setTiming({ ...timing, name: e.target.value })} /></Field>
+          <Field label={f('end')} required><TextInput type="date" required min={timing.startDate} value={timing.endDate} onChange={(e) => setTiming({ ...timing, endDate: e.target.value })} /></Field>
+          <Field label={f('dueDays')} required><TextInput type="number" min="0" max="90" required value={timing.dueDays} onChange={(e) => setTiming({ ...timing, dueDays: e.target.value })} /></Field>
+        </div>
+        {timing.componentRules.map((rule) => { const item = refs.plans.find((p) => recordId(p) === recordId(timing.plan))?.items.find((i) => recordId(i.feeType) === rule.feeType);
+          return <div key={rule.feeType} className="grid gap-3 rounded-xl bg-slate-50 p-3 sm:grid-cols-3">
+            <div className="self-center text-sm font-semibold">{item ? bt(item.title) : rule.feeType}{item && <div className="font-normal">{money(item.amount)}</div>}</div>
+            <Field label={f('frequency')}><Select value={rule.intervalMonths} onChange={(e) => timingPatch(rule.feeType, { intervalMonths: Number(e.target.value) })}>
+              <option value={0}>{f('one_time')}</option>{Array.from({ length: 12 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{f('everyMonths').replace('{n}', n)}</option>)}</Select></Field>
+            <Field label={f('start')}><TextInput type="date" required min={timing.startDate} max={timing.endDate} value={rule.startDate} onChange={(e) => timingPatch(rule.feeType, { startDate: e.target.value })} /></Field>
+          </div>; })}
+        <div className="flex justify-end gap-2"><button type="button" className={buttonClass} disabled={busy} onClick={() => setTiming(null)}>{f('cancel')}</button><button className={primaryClass} disabled={busy}>{f('save')}</button></div>
+      </form>}
+    </Modal>
     <Modal open={!!cancelling} onClose={() => !busy && setCancelling(null)} title={f('cancelSchedule')}>
       <form onSubmit={cancelSchedule} className="space-y-4"><ErrorNotice error={error} />
         <p className="font-semibold">{cancelling?.name}</p><Notice>{f('cancelScheduleHint')}</Notice>

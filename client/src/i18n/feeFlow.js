@@ -46,6 +46,8 @@ const entries = {
   addLine: ['Add fee component', 'ফি খাত যোগ করুন'], remove: ['Remove', 'বাদ দিন'], choose: ['Select…', 'নির্বাচন করুন…'],
   active: ['Active', 'সক্রিয়'], inactive: ['Inactive', 'নিষ্ক্রিয়'], save: ['Save', 'সংরক্ষণ'], cancel: ['Cancel', 'বাতিল'], edit: ['Edit', 'সম্পাদনা'],
   error: ['Unable to load or save. Please try again.', 'লোড বা সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।'], saved: ['Saved successfully', 'সংরক্ষিত হয়েছে'],
+  editTiming: ['Edit timing', 'সময় সম্পাদনা'], editTimingTitle: ['Edit billing timing', 'বিলের সময় সম্পাদনা'],
+  editTimingHint: ['Changes apply to future invoices only. Invoices already generated are not changed; cancel or waive them separately if needed. Moving a fee start date earlier creates the missed invoices right away.', 'পরিবর্তন শুধু ভবিষ্যৎ ইনভয়েসে প্রযোজ্য। তৈরি হওয়া ইনভয়েস বদলাবে না; প্রয়োজনে আলাদাভাবে বাতিল বা মওকুফ করুন। শুরুর তারিখ আগে নিলে বাদ পড়া ইনভয়েস সাথে সাথে তৈরি হবে।'],
   addSchedule: ['Create billing schedule', 'বিলের সময়সূচি তৈরি করুন'], editSchedule: ['Edit draft schedule', 'খসড়া সময়সূচি সম্পাদনা'],
   scheduleHint: ['Select charges and students, set billing and due dates, then preview. An administrator must approve before invoices are generated.', 'খাত, শিক্ষার্থী ও বিলের তারিখ নির্বাচন করে প্রাকদর্শন দেখুন। প্রশাসকের অনুমোদনের পর ইনভয়েস তৈরি হবে।'],
   plan: ['Fee plan', 'ফি পরিকল্পনা'], components: ['Components to bill', 'বিলে অন্তর্ভুক্ত খাত'], start: ['First invoice date', 'প্রথম ইনভয়েসের তারিখ'],
