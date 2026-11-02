@@ -83,7 +83,17 @@ const salaryPaymentSchema = new Schema(
 );
 
 // One salary payment per staff per month.
-salaryPaymentSchema.index({ staff: 1, month: 1 }, { unique: true });
+salaryPaymentSchema.index({ staff: 1, month: 1 }, { name: 'active_salary_month', unique: true, partialFilterExpression: { isReversed: false } });
+
+for (const schema of [incomeSchema, expenseSchema, salaryPaymentSchema]) schema.add({
+  isReversed: { type: Boolean, default: false },
+  reversalCorrection: { type: Schema.Types.ObjectId, ref: 'FinancialCorrection' },
+  sourceCorrection: { type: Schema.Types.ObjectId, ref: 'FinancialCorrection' },
+});
+for (const schema of [incomeSchema, expenseSchema]) {
+  schema.add({ requestKey: String, requestHash: String, duplicateAcknowledged: { type: Boolean, default: false } });
+  schema.index({ requestKey: 1 }, { unique: true, sparse: true });
+}
 
 export const FinanceCategory = mongoose.model('FinanceCategory', financeCategorySchema);
 export const Income = mongoose.model('Income', incomeSchema);

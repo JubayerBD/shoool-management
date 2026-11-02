@@ -9,12 +9,15 @@ import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
 import { t as bt } from '../../utils/bilingual.js';
 
 const DAYS = [0, 1, 2, 3, 4, 5, 6];
+const SCHOOL_DAYS = DAYS.filter((day) => day !== 5);
+const shiftDate = (day, count) => new Date(new Date(`${day}T12:00:00Z`).getTime() + count * 86400000).toISOString().slice(0,10);
+const initialWeek = () => { const day = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Dhaka' }).format(new Date()); return shiftDate(day, -new Date(`${day}T12:00:00Z`).getUTCDay()); };
 
 function AddPeriodModal({ open, onClose, onSubmit, subjects, teachers, saving }) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
   const [form, setForm] = useState({
-    dayOfWeek: '0',
+    daysOfWeek: [0],
     startTime: '09:00',
     endTime: '09:45',
     subject: '',
@@ -24,7 +27,7 @@ function AddPeriodModal({ open, onClose, onSubmit, subjects, teachers, saving })
 
   useEffect(() => {
     if (open)
-      setForm({ dayOfWeek: '0', startTime: '09:00', endTime: '09:45', subject: '', teacher: '', room: '' });
+      setForm({ daysOfWeek: [0], startTime: '09:00', endTime: '09:45', subject: '', teacher: '', room: '' });
   }, [open]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -32,7 +35,7 @@ function AddPeriodModal({ open, onClose, onSubmit, subjects, teachers, saving })
   const submit = (e) => {
     e.preventDefault();
     const payload = {
-      dayOfWeek: Number(form.dayOfWeek),
+      daysOfWeek: form.daysOfWeek,
       startTime: form.startTime,
       endTime: form.endTime,
     };
@@ -59,7 +62,7 @@ function AddPeriodModal({ open, onClose, onSubmit, subjects, teachers, saving })
           <button
             type="submit"
             form="period-form"
-            disabled={saving}
+            disabled={saving || !form.daysOfWeek.length}
             className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
           >
             {saving ? t('common.saving') : t('common.save')}
@@ -68,15 +71,12 @@ function AddPeriodModal({ open, onClose, onSubmit, subjects, teachers, saving })
       }
     >
       <form id="period-form" onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label={t('timetable.day')} required>
-          <Select value={form.dayOfWeek} onChange={(e) => set('dayOfWeek', e.target.value)}>
-            {DAYS.map((d) => (
-              <option key={d} value={d}>
-                {t(`timetable.days.${d}`)}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <fieldset className="space-y-2 sm:col-span-2">
+          <legend className="text-sm font-medium text-slate-700">{lang === 'bn' ? 'দিনসমূহ' : 'Days'} <span className="text-red-500">*</span></legend>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={SCHOOL_DAYS.every((d) => form.daysOfWeek.includes(d))} onChange={(e) => set('daysOfWeek', e.target.checked ? [...SCHOOL_DAYS] : [])} />{lang === 'bn' ? 'সব কর্মদিবস নির্বাচন করুন' : 'Select all school days'}</label>
+          <div className="flex flex-wrap gap-2">{DAYS.map((d) => <label key={d} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm"><input type="checkbox" disabled={d === 5} checked={form.daysOfWeek.includes(d)} onChange={(e) => set('daysOfWeek', e.target.checked ? [...form.daysOfWeek, d].sort() : form.daysOfWeek.filter((day) => day !== d))} />{t(`timetable.days.${d}`)}{d === 5 && <span className="text-xs text-slate-400">{lang === 'bn' ? 'সাপ্তাহিক ছুটি' : 'Weekend'}</span>}</label>)}</div>
+          {!form.daysOfWeek.length && <p className="text-sm text-red-600">{lang === 'bn' ? 'অন্তত একটি দিন নির্বাচন করুন।' : 'Select at least one day.'}</p>}
+        </fieldset>
         <Field label={t('timetable.room')}>
           <TextInput value={form.room} onChange={(e) => set('room', e.target.value)} />
         </Field>
@@ -86,8 +86,8 @@ function AddPeriodModal({ open, onClose, onSubmit, subjects, teachers, saving })
         <Field label={t('timetable.endTime')} required>
           <TextInput type="time" value={form.endTime} onChange={(e) => set('endTime', e.target.value)} />
         </Field>
-        <Field label={t('timetable.subject')}>
-          <Select value={form.subject} onChange={(e) => set('subject', e.target.value)}>
+        <Field label={t('timetable.subject')} required>
+          <Select required value={form.subject} onChange={(e) => set('subject', e.target.value)}>
             <option value="">—</option>
             {subjects.map((s) => (
               <option key={s.id || s._id} value={s.id || s._id}>
@@ -128,6 +128,14 @@ export default function Timetable() {
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [week, setWeek] = useState(initialWeek);
+  const [calendar, setCalendar] = useState(null);
+  const [calendarError, setCalendarError] = useState('');
+  useEffect(() => {
+    let active = true; setCalendar(null); setCalendarError('');
+    api.get('/calendar', { params: { from: week, to: shiftDate(week,6) } }).then((r) => { if(active) setCalendar(r.data); }).catch((err) => { if(active) setCalendarError(err.response?.data?.error?.message || 'Unable to load calendar'); });
+    return () => { active = false; };
+  }, [week]);
 
   useEffect(() => {
     api.get('/academics/sections', { params: { limit: 500 } }).then((r) => setSections(r.data.items));
@@ -185,7 +193,7 @@ export default function Timetable() {
   const addPeriod = async (payload) => {
     setSaving(true);
     try {
-      await api.post('/schedule/timetable', { ...payload, section });
+      await api.post('/schedule/timetable/bulk', { ...payload, section });
       setModalOpen(false);
       push(t('timetable.saved'));
       loadSlots();
@@ -209,6 +217,8 @@ export default function Timetable() {
   return (
     <div className="space-y-5">
       <h1 className="text-2xl font-bold text-slate-800">{t('timetable.title')}</h1>
+      <div className="flex flex-wrap items-center gap-3 text-sm"><button className="rounded-lg border bg-white px-3 py-2" onClick={() => setWeek(shiftDate(week,-7))}>← {lang === 'bn' ? 'আগের সপ্তাহ' : 'Previous week'}</button><label>{lang === 'bn' ? 'সপ্তাহ' : 'Week of'} <input aria-label="Week of" type="date" className="rounded-lg border p-2" value={week} onChange={(e) => { if(e.target.value) setWeek(shiftDate(e.target.value,-new Date(`${e.target.value}T12:00:00Z`).getUTCDay())); }} /></label><button className="rounded-lg border bg-white px-3 py-2" onClick={() => setWeek(shiftDate(week,7))}>{lang === 'bn' ? 'পরের সপ্তাহ' : 'Next week'} →</button><a className="text-brand-600" href="/academic-calendar">{lang === 'bn' ? 'শিক্ষাপঞ্জি' : 'Academic calendar'}</a></div>
+      {calendarError && <p role="alert" className="text-sm text-red-600">{calendarError}</p>}
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         {selfService ? (
@@ -256,9 +266,10 @@ export default function Timetable() {
               <div key={d} className="rounded-xl bg-white p-3 shadow-sm">
                 <div className="mb-2 border-b border-slate-200 pb-2 text-center text-sm font-semibold text-slate-700">
                   {t(`timetable.days.${d}`)}
+                  <div className="mt-1 text-xs font-normal text-slate-400">{shiftDate(week,d)}</div>
                 </div>
                 <div className="space-y-2">
-                  {byDay[d].length === 0 ? (
+                  {d === 5 || calendar?.days[d]?.closed ? <p className="rounded-lg bg-rose-50 p-2 text-xs text-rose-700">{d === 5 ? (lang === 'bn' ? 'সাপ্তাহিক ছুটি' : 'Weekend') : calendar.days[d].events.filter((e) => e.closed).map((e) => e.title).join(', ')}<span className="mt-1 block">{lang === 'bn' ? 'ক্লাস নেই' : 'No classes'}</span></p> : !calendar ? <p className="text-xs text-slate-400">{calendarError || t('common.loading')}</p> : byDay[d].length === 0 ? (
                     <p className="py-3 text-center text-xs text-slate-300">{t('timetable.noPeriods')}</p>
                   ) : (
                     byDay[d].map((slot) => (

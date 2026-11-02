@@ -10,6 +10,8 @@ export default function BarChart({ data, unit = '' }) {
   const chartW = width - pad.left - pad.right;
   const chartH = height - pad.top - pad.bottom;
   const max = Math.max(1, ...data.map((d) => d.value));
+  const min = Math.min(0, ...data.map((d) => d.value));
+  const zeroY = pad.top + (max / (max - min)) * chartH;
   const n = data.length || 1;
   const slot = chartW / n;
   const barW = Math.min(56, slot * 0.6);
@@ -19,18 +21,18 @@ export default function BarChart({ data, unit = '' }) {
       {/* baseline */}
       <line
         x1={pad.left}
-        y1={pad.top + chartH}
+        y1={zeroY}
         x2={width - pad.right}
-        y2={pad.top + chartH}
+        y2={zeroY}
         stroke="#e2e8f0"
       />
       {data.map((d, i) => {
-        const h = (d.value / max) * chartH;
+        const h = (Math.abs(d.value) / (max - min)) * chartH;
         const x = pad.left + i * slot + (slot - barW) / 2;
-        const y = pad.top + chartH - h;
+        const y = d.value < 0 ? zeroY : zeroY - h;
         return (
           <g key={i}>
-            <rect x={x} y={y} width={barW} height={h} rx="4" fill="#2563eb" />
+            <rect x={x} y={y} width={barW} height={h} rx="4" fill={d.value < 0 ? '#dc2626' : '#2563eb'} />
             <text
               x={x + barW / 2}
               y={y - 6}

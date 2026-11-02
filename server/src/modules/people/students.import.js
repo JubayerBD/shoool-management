@@ -28,8 +28,8 @@ export async function importStudents(req, res) {
   const [classes, sections] = await Promise.all([Class.find().lean(), Section.find().lean()]);
   const findClass = (name) =>
     classes.find((c) => c.name?.en?.toLowerCase() === String(name).toLowerCase());
-  const findSection = (name, classId) =>
-    sections.find(
+  const findSections = (name, classId) =>
+    sections.filter(
       (s) =>
         s.name?.en?.toLowerCase() === String(name).toLowerCase() &&
         (!classId || String(s.class) === String(classId))
@@ -45,10 +45,13 @@ export async function importStudents(req, res) {
       if (!r.admissionNo) throw new Error('admissionNo is required');
       if (!r.nameEn) throw new Error('nameEn is required');
 
-      const cls = r.className ? findClass(r.className) : null;
+      let cls = r.className ? findClass(r.className) : null;
       if (r.className && !cls) throw new Error(`Unknown class "${r.className}"`);
-      const section = r.sectionName ? findSection(r.sectionName, cls?._id) : null;
+      const matches = r.sectionName ? findSections(r.sectionName, cls?._id) : [];
+      if (matches.length > 1) throw new Error('Section name is ambiguous; provide className');
+      const section = matches[0] || null;
       if (r.sectionName && !section) throw new Error(`Unknown section "${r.sectionName}"`);
+      if (!cls && section) cls = classes.find((c) => String(c._id) === String(section.class));
 
       const doc = {
         admissionNo: r.admissionNo,
@@ -57,6 +60,7 @@ export async function importStudents(req, res) {
       };
       if (r.roll) doc.roll = Number(r.roll);
       if (cls) doc.class = cls._id;
+      if (cls?.academicYear) doc.academicYear = cls.academicYear;
       if (section) doc.section = section._id;
       if (r.guardianName) {
         doc.guardians = [{ name: { en: r.guardianName, bn: '' }, phone: r.guardianPhone || '' }];

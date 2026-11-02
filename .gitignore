@@ -7,3 +7,8 @@ build/
 server/uploads/
 artifacts/fees-ui/
 .local-backups/
+.data/
+Hosting Info/
+artifacts/
+tmp/
+**/.claude/

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { schoolDate } from '../../utils/schoolDate.js';
 
 const statusBg = {
   present: 'bg-emerald-500 text-white',
@@ -9,10 +10,7 @@ const statusBg = {
 };
 
 const toKey = (d) => {
-  const dt = new Date(d);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(
-    dt.getDate()
-  ).padStart(2, '0')}`;
+  return schoolDate(d);
 };
 
 /**
@@ -22,8 +20,8 @@ const toKey = (d) => {
 export default function AttendanceCalendar({ records }) {
   const { t } = useTranslation();
   const [cursor, setCursor] = useState(() => {
-    const d = new Date();
-    return { year: d.getFullYear(), month: d.getMonth() }; // month 0-11
+    const [year, month] = schoolDate().split('-').map(Number);
+    return { year, month: month - 1 }; // month 0-11
   });
 
   const byDay = useMemo(() => {

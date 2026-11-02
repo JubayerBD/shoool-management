@@ -5,12 +5,18 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "test": "node --test test/finance.test.js test/security.test.js",
+    "test": "node --test test/finance.test.js test/security.test.js test/balance.test.js test/activity.test.js test/features.test.js test/financial-controls.test.js",
     "test:ui": "node test/fees-ui.mjs",
+    "test:ui:finance": "node test/profit-ui.mjs",
+    "test:ui:school": "node test/school-ui.mjs",
+    "test:ui:controls": "node test/controls-ui.mjs",
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node src/seed/seed.js",
-    "mongo:memory": "node src/seed/memory-mongo.js"
+    "mongo:memory": "node src/seed/memory-mongo.js",
+    "mongo:local": "node src/seed/local-mongo.js",
+    "backup": "node src/seed/backup-cli.js",
+    "restore": "node src/seed/restore-cli.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

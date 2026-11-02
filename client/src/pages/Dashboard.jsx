@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { t as bt } from '../utils/bilingual.js';
 import BarChart from '../components/charts/BarChart.jsx';
 import DonutChart from '../components/charts/DonutChart.jsx';
+import CurrentBalanceCard from './finance/CurrentBalanceCard.jsx';
 
 function ChartCard({ title, children }) {
   return (
@@ -74,6 +75,7 @@ export default function Dashboard() {
         <div className="text-slate-500">{t('common.loading')}</div>
       ) : (
         <>
+          {['admin', 'accountant'].includes(user.role) && <CurrentBalanceCard />}
           {stats && (
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <StatCard label={t('dashboard.totalStudents')} value={stats.students} />

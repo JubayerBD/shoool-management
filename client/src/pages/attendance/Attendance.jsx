@@ -4,6 +4,8 @@ import api from '../../api/client.js';
 import { useToast } from '../../components/ui/Toast.jsx';
 import { Select } from '../../components/ui/Field.jsx';
 import { t as bt } from '../../utils/bilingual.js';
+import { schoolDate } from '../../utils/schoolDate.js';
+import { getAll } from '../../api/getAll.js';
 
 const STATUSES = ['present', 'absent', 'late', 'leave'];
 
@@ -15,7 +17,7 @@ const statusStyle = {
 };
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return schoolDate();
 }
 
 export default function Attendance() {
@@ -33,9 +35,7 @@ export default function Attendance() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api
-      .get('/academics/sections', { params: { limit: 500 } })
-      .then((r) => setSections(r.data.items));
+    getAll('/academics/sections').then((r) => setSections(r.data.items)).catch(() => push('Error loading sections', 'error'));
   }, []);
 
   const loadRoster = async () => {
@@ -44,8 +44,8 @@ export default function Attendance() {
     setLoaded(false);
     try {
       const [studentsRes, attendanceRes] = await Promise.all([
-        api.get('/people/students', { params: { section, limit: 200 } }),
-        api.get('/attendance', { params: { section, from: date, to: date } }),
+        getAll('/people/students', { params: { section, status: 'active' } }),
+        getAll('/attendance', { params: { section, from: date, to: date } }),
       ]);
       // Map existing attendance by student id.
       const existing = {};
@@ -105,7 +105,7 @@ export default function Attendance() {
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t('students.section')}
           </label>
-          <Select value={section} onChange={(e) => setSection(e.target.value)}>
+          <Select value={section} onChange={(e) => { setSection(e.target.value); setLoaded(false); setRoster([]); }}>
             <option value="">{t('attendance.selectSection')}</option>
             {sections.map((s) => (
               <option key={s.id || s._id} value={s.id || s._id}>
@@ -121,7 +121,8 @@ export default function Attendance() {
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            max={today()}
+            onChange={(e) => { setDate(e.target.value); setLoaded(false); setRoster([]); }}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
           />
         </div>

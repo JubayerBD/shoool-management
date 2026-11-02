@@ -1,4 +1,5 @@
 import { ApiError } from './ApiError.js';
+import { validateReferences } from './validateReferences.js';
 
 /**
  * Build a set of CRUD handlers for a Mongoose model.
@@ -57,16 +58,22 @@ export function crudController(Model, opts = {}) {
     },
 
     async create(req, res) {
-      const doc = await Model.create(req.body);
+      const doc = new Model(req.body);
+      await doc.validate();
+      await validateReferences(doc);
+      await doc.save();
       res.status(201).json({ item: doc });
     },
 
     async update(req, res) {
-      const doc = await Model.findByIdAndUpdate(req.params.id, req.body, {
-        new: true,
-        runValidators: true,
-      });
+      const doc = await Model.findById(req.params.id);
       if (!doc) throw ApiError.notFound(`${Model.modelName} not found`);
+      const body = { ...req.body };
+      for (const key of ['id', '_id', '__v', 'createdAt', 'updatedAt']) delete body[key];
+      doc.set(body);
+      await doc.validate();
+      await validateReferences(doc);
+      await doc.save();
       res.json({ item: doc });
     },
 

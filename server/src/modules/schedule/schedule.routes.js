@@ -7,6 +7,8 @@ import { sendMail } from '../../utils/mailer.js';
 import { sendSms } from '../../utils/sms.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { noticeScopeFor } from '../../utils/access.js';
+import mongoose from 'mongoose';
+import { validateReferences } from '../../utils/validateReferences.js';
 
 const escapeHtml = (value) =>
   String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -16,19 +18,24 @@ const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 async function checkSlot(req, _res, next) {
   const existing = req.params.id ? await TimetableSlot.findById(req.params.id).lean() : null;
   const slot = { ...(existing || {}), ...req.body };
+  await validateSlot(slot, req.params.id);
+  next();
+}
+
+async function validateSlot(slot, id, session = null) {
+  if (Number(slot.dayOfWeek) === 5) throw ApiError.badRequest('Friday is the weekly holiday; choose a school day');
   if (!TIME.test(String(slot.startTime ?? '')) || !TIME.test(String(slot.endTime ?? ''))) {
     throw ApiError.badRequest('Times must look like 09:00');
   }
   if (slot.endTime <= slot.startTime) throw ApiError.badRequest('End time must be after the start time');
   const overlap = { dayOfWeek: slot.dayOfWeek, startTime: { $lt: slot.endTime }, endTime: { $gt: slot.startTime } };
-  if (req.params.id) overlap._id = { $ne: req.params.id };
-  if (slot.section && (await TimetableSlot.exists({ ...overlap, section: slot.section }))) {
+  if (id) overlap._id = { $ne: id };
+  if (slot.section && (await TimetableSlot.exists({ ...overlap, section: slot.section }).session(session))) {
     throw ApiError.conflict('This section already has a class in that time slot');
   }
-  if (slot.teacher && (await TimetableSlot.exists({ ...overlap, teacher: slot.teacher }))) {
+  if (slot.teacher && (await TimetableSlot.exists({ ...overlap, teacher: slot.teacher }).session(session))) {
     throw ApiError.conflict('This teacher is already teaching another class in that time slot');
   }
-  next();
 }
 
 const router = Router();
@@ -72,6 +79,23 @@ const slots = crudController(TimetableSlot, {
 });
 
 router.get('/timetable', requireAuth, slots.list);
+router.post('/timetable/bulk', requireAuth, requireRole('admin', 'teacher'), async (req, res) => {
+  const { daysOfWeek, section, subject, teacher, startTime, endTime, room } = req.body;
+  if (!Array.isArray(daysOfWeek) || !daysOfWeek.length || daysOfWeek.length > 7 ||
+      daysOfWeek.some((day) => !Number.isInteger(day) || day < 0 || day > 6) || new Set(daysOfWeek).size !== daysOfWeek.length) {
+    throw ApiError.badRequest('Select between one and seven different days');
+  }
+  const docs = daysOfWeek.map((dayOfWeek) => new TimetableSlot({ section, subject, teacher, startTime, endTime, room, dayOfWeek }));
+  for (const doc of docs) { await doc.validate(); await validateReferences(doc); }
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      for (const doc of docs) await validateSlot(doc, null, session);
+      await TimetableSlot.insertMany(docs.map((doc) => doc.toObject()), { session });
+    });
+    res.status(201).json({ items: docs });
+  } finally { await session.endSession(); }
+});
 router.get('/timetable/:id', requireAuth, slots.get);
 router.post('/timetable', requireAuth, requireRole('admin', 'teacher'), checkSlot, slots.create);
 router.put('/timetable/:id', requireAuth, requireRole('admin', 'teacher'), checkSlot, slots.update);
@@ -116,7 +140,7 @@ router.post('/notices', requireAuth, admin, async (req, res) => {
   req.body.createdBy = req.user.id;
   const notice = await Notice.create(req.body);
   // Notify recipients without blocking the response.
-  notifyNoticeAudience(notice);
+  if (notice.publishedAt <= new Date()) notifyNoticeAudience(notice);
   res.status(201).json({ item: notice });
 });
 router.put('/notices/:id', requireAuth, admin, notices.update);

@@ -6,7 +6,8 @@ import api from '../../api/client.js';
 import { useToast } from '../../components/ui/Toast.jsx';
 import { t as bt } from '../../utils/bilingual.js';
 import DataTable from '../../components/ui/DataTable.jsx';
-import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
+import RequestReversal from './FinancialControls.jsx';
+import { Link } from 'react-router-dom';
 import Modal from '../../components/ui/Modal.jsx';
 import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
 import PrintDocument, { DocFields, DocItems, DocWords, useDocText } from '../../components/print/PrintDocument.jsx';
@@ -38,7 +39,6 @@ export default function Salaries() {
     paidAt: today(),
   });
   const [saving, setSaving] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
   const [slip, setSlip] = useState(null);
 
   const [structOpen, setStructOpen] = useState(false);
@@ -113,18 +113,6 @@ export default function Salaries() {
     }
   };
 
-  const handleDelete = async () => {
-    try {
-      await api.delete(`/finance/salaries/${deleteId}`);
-      push(t('finance.deleted'));
-      loadPayments();
-    } catch (err) {
-      push(err.response?.data?.error?.message || 'Error', 'error');
-    } finally {
-      setDeleteId(null);
-    }
-  };
-
   const columns = [
     { key: 'staff', header: t('finance.salaries.staff'), render: (r) => bt(r.staff?.name, lang) },
     { key: 'month', header: t('finance.salaries.month') },
@@ -140,7 +128,7 @@ export default function Salaries() {
       key: 'actions',
       header: t('common.actions'),
       className: 'text-right',
-      render: (r) => (
+      render: (r) => r.isCorrection ? <Link className="text-xs text-brand-600" to="/finance?tab=corrections">View correction</Link> : (
         <div className="flex justify-end gap-2">
           <button
             type="button"
@@ -149,13 +137,8 @@ export default function Salaries() {
           >
             {t('finance.salaries.slip')}
           </button>
-          <button
-            type="button"
-            onClick={() => setDeleteId(r.id || r._id)}
-            className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-          >
-            {t('common.delete')}
-          </button>
+          {!r.isCorrection && !r.isReversed && <RequestReversal type="salary" id={r.id || r._id} summary={`${r.month} - ${r.net}`} onRequested={loadPayments} />}
+
         </div>
       ),
     },
@@ -290,7 +273,6 @@ export default function Salaries() {
         {slip && <SalarySlip slip={slip} />}
       </Modal>
 
-      <ConfirmDialog open={!!deleteId} onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />
     </div>
   );
 }
@@ -305,7 +287,7 @@ function SalarySlip({ slip }) {
     : slip.month;
   return (
     <PrintDocument
-      title={d('salarySlip')}
+      title={`${d('salarySlip')}${slip.isReversed ? ' (REVERSED)' : ''}`}
       copies={[d('copyEmployee'), d('copyOffice')]}
       signatures={[d('sigEmployee'), d('sigAccountant'), d('sigPrincipal')]}
     >

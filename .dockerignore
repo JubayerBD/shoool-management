@@ -4,3 +4,9 @@
 **/*.log
 .git
 server/uploads
+.data
+.local-backups
+Hosting Info
+artifacts
+tmp
+**/.claude

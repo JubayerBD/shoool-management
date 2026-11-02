@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
+import { getAll } from '../../api/getAll.js';
 import { useOwnStudent } from '../../hooks/useOwnStudent.js';
 import { t as bt } from '../../utils/bilingual.js';
 import AttendanceCalendar from '../../components/charts/AttendanceCalendar.jsx';
@@ -37,7 +38,7 @@ export default function MyAttendance() {
     }
     Promise.all([
       api.get(`/attendance/summary/${studentId}`),
-      api.get('/attendance', { params: { student: studentId } }),
+      getAll('/attendance', { params: { student: studentId } }),
     ])
       .then(([s, r]) => {
         setSummary(s.data.summary);

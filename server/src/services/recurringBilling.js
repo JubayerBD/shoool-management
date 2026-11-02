@@ -45,7 +45,7 @@ export async function runRecurringBilling(now = new Date()) {
       }
     }
   }
-  for await (const expense of Expense.find({ 'recurring.enabled': true, recurringSource: { $exists: false } })) {
+  for await (const expense of Expense.find({ 'recurring.enabled': true, recurringSource: { $exists: false }, isReversed: { $ne: true } })) {
     const start = schoolDate(expense.date);
     const interval = months[expense.recurring.frequency];
     if (!interval) continue;

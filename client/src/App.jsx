@@ -1,5 +1,5 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext.jsx';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import { ToastProvider } from './components/ui/Toast.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Layout from './components/Layout.jsx';
@@ -11,18 +11,28 @@ import AttendanceView from './pages/attendance/AttendanceView.jsx';
 import Exams from './pages/exams/Exams.jsx';
 import Fees from './pages/fees/Fees.jsx';
 import Timetable from './pages/timetable/Timetable.jsx';
+import AcademicCalendar from './pages/timetable/AcademicCalendar.jsx';
 import Notices from './pages/notices/Notices.jsx';
 import Accounts from './pages/accounts/Accounts.jsx';
 import Finance from './pages/finance/Finance.jsx';
+import Partners from './pages/partners/Partners.jsx';
+import ActivityLogs from './pages/activity/ActivityLogs.jsx';
 import Classes from './pages/academics/Classes.jsx';
 import Sections from './pages/academics/Sections.jsx';
 import Subjects from './pages/academics/Subjects.jsx';
-// Admin-only academic-setup screens.
+// Teachers can read academic setup; administrative changes remain admin-only.
 const ACADEMIC_ROUTES = [
   { path: 'classes', element: <Classes /> },
   { path: 'sections', element: <Sections /> },
   { path: 'subjects', element: <Subjects /> },
 ];
+
+function Home() {
+  const { user } = useAuth();
+  if (user.role === 'teacher') return <Navigate to="/students" replace />;
+  if (user.role === 'accountant') return <Navigate to="/fees" replace />;
+  return <Dashboard />;
+}
 
 export default function App() {
   return (
@@ -38,11 +48,15 @@ export default function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<Dashboard />} />
+              <Route index element={<Home />} />
+              <Route path="academic-calendar" element={<ProtectedRoute roles={['admin', 'student', 'parent', 'teacher']}><AcademicCalendar /></ProtectedRoute>} />
+              <Route path="activity-logs" element={<ProtectedRoute roles={['admin']}><ActivityLogs /></ProtectedRoute>} />
+              <Route path="partners" element={<ProtectedRoute roles={['admin']}><Partners /></ProtectedRoute>} />
+              <Route path="partners/:id" element={<ProtectedRoute roles={['admin']}><Partners /></ProtectedRoute>} />
               <Route
                 path="students"
                 element={
-                  <ProtectedRoute roles={['admin', 'teacher', 'accountant']}>
+                  <ProtectedRoute roles={['admin', 'teacher']}>
                     <Students />
                   </ProtectedRoute>
                 }
@@ -50,7 +64,7 @@ export default function App() {
               <Route
                 path="teachers"
                 element={
-                  <ProtectedRoute roles={['admin', 'teacher']}>
+                  <ProtectedRoute roles={['admin']}>
                     <Teachers />
                   </ProtectedRoute>
                 }
@@ -81,9 +95,9 @@ export default function App() {
               />
               <Route
                 path="timetable"
-                element={<Timetable />}
+                element={<ProtectedRoute roles={['admin', 'student', 'parent']}><Timetable /></ProtectedRoute>}
               />
-              <Route path="notices" element={<Notices />} />
+              <Route path="notices" element={<ProtectedRoute roles={['admin', 'student', 'parent']}><Notices /></ProtectedRoute>} />
               <Route
                 path="accounts"
                 element={
@@ -104,7 +118,7 @@ export default function App() {
                 <Route
                   key={r.path}
                   path={r.path}
-                  element={<ProtectedRoute roles={['admin']}>{r.element}</ProtectedRoute>}
+                  element={<ProtectedRoute roles={['admin', 'teacher']}>{r.element}</ProtectedRoute>}
                 />
               ))}
             </Route>

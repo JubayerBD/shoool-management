@@ -29,6 +29,7 @@ export function noticeScopeFor(user) {
   if (user.role === 'admin') return null;
   return {
     $and: [
+      { $or: [{ publishedAt: { $lte: new Date() } }, { publishedAt: null }] },
       { $or: [{ audience: { $size: 0 } }, { audience: { $in: ['all', user.role] } }] },
       { $or: [{ expiresAt: null }, { expiresAt: { $exists: false } }, { expiresAt: { $gt: new Date() } }] },
     ],

@@ -52,6 +52,80 @@ after(async () => {
 
 const invoiceBody = (student, amount = 100) => ({ student: student.id, items: [{ title: { en: 'Tuition' }, amount }] });
 
+test('manual income and expenses require a nonblank physical document number on create and edit', async () => {
+  for (const [endpoint, reference] of [['income', '000123-INV'], ['expenses', '000456-VCH']]) {
+    const path = `/finance/${endpoint}`;
+    for (const value of [undefined, '', '   ', 123, 'x'.repeat(201)]) {
+      assert.equal((await request(path, admin, { amount: 10, reference: value })).status, 400);
+    }
+    const created = await request(path, admin, { amount: 10, reference: `  ${reference}  `, date: '2000-01-01' });
+    assert.equal(created.status, 201);
+    assert.equal(created.item.reference, reference, 'preserve leading zeros and trim whitespace');
+    const itemPath = `${path}/${created.item.id}`;
+    assert.equal((await request(itemPath, admin, { amount: 11, reference: ' ' }, 'PUT')).status, 409);
+    assert.equal((await request(itemPath, admin, undefined, 'DELETE')).status, 409);
+    const change = { targetType: endpoint === 'income' ? 'income' : 'expense', targetId: created.item.id, operation: 'replace', reason: 'Correct document no.', requestKey: randomUUID(), proposed: { amount: 11, reference: `${reference}-EDIT`, date: '2000-01-01' } };
+    const pending = await request('/finance/corrections', admin, change);
+    assert.equal(pending.status, 201); assert.equal(pending.item.proposed.reference, `${reference}-EDIT`);
+    const { FinancialCorrection } = await import('../src/models/FinancialCorrection.js');
+    await FinancialCorrection.findByIdAndDelete(pending.item.id); // Isolated fixture cleanup, not an application action.
+    await (endpoint === 'income' ? Income : Expense).findByIdAndDelete(created.item.id);
+  }
+});
+
+test('partner capital controls shares, preserves deposit history, and safely retries deposits', async () => {
+  assert.equal((await request('/partners', studentUser)).status, 403);
+  assert.equal((await request('/partners', teacher, { name: 'Denied' })).status, 403);
+  assert.equal((await request('/partners', admin, { name: 'Missing fields' })).status, 400);
+  const body = { name: 'Partner A', phone: '01700000000', address: 'Dhaka', email: '' };
+  const a = (await request('/partners', admin, body)).item;
+  const b = (await request('/partners', admin, { ...body, name: 'Partner B' })).item;
+  const empty = await request('/partners?profit=100');
+  assert.equal(empty.totalCapital, 0);
+  assert.ok(empty.items.every((p) => p.percentage === 0 && p.profit === 0));
+  const deposit = { amount: 100000, date: schoolDate(), requestKey: randomUUID() };
+  const results = await Promise.all([0, 1].map(() => request(`/partners/${a.id}/deposits`, admin, deposit)));
+  assert.ok(results.every((r) => r.status === 201));
+  assert.equal(results[0].item.id, results[1].item.id);
+  assert.equal((await request(`/partners/${a.id}/deposits`, admin, { ...deposit, amount: 2 })).status, 409);
+  assert.equal((await request(`/partners/${b.id}/deposits`, admin, { ...deposit, requestKey: randomUUID(), amount: -1 })).status, 400);
+  assert.equal((await request(`/partners/${b.id}/deposits`, admin, { ...deposit, requestKey: randomUUID(), amount: 1.001 })).status, 400);
+  assert.equal((await request(`/partners/${b.id}/deposits`, admin, { ...deposit, requestKey: randomUUID(), date: '2025-02-30' })).status, 400);
+  await request(`/partners/${b.id}/deposits`, admin, { ...deposit, requestKey: randomUUID(), amount: 50000 });
+  const summary = await request('/partners?profit=100');
+  assert.equal(summary.totalCapital, 150000);
+  assert.equal(summary.items.find((p) => p.id === a.id).profit, 66.67);
+  assert.equal(summary.items.find((p) => p.id === b.id).profit, 33.33);
+  const history = await request(`/partners/${a.id}`);
+  assert.equal(history.deposits.length, 1);
+  assert.equal(history.deposits[0].amount, 100000);
+  assert.equal(history.deposits[0].recordedBy, admin.id);
+  await request(`/partners/${b.id}/deposits`, admin, { ...deposit, requestKey: randomUUID(), amount: 50000 });
+  const equal = await request('/partners?profit=100');
+  assert.ok(equal.items.every((p) => p.percentage === 50 && p.profit === 50));
+  const investments = await request('/finance/income?category=partner-investment');
+  assert.equal(investments.total, 3, 'retry must not add a second income entry');
+  assert.equal(investments.items.reduce((sum, r) => sum + r.amount, 0), 200000);
+  const incomeEntry = investments.items.find((r) => r.partner === a.id);
+  assert.equal(incomeEntry.source, 'Partner A');
+  assert.equal(incomeEntry.category.name.en, 'Partner investment');
+  assert.equal((await request('/finance/income?category=partner-investment&search=Partner%20B')).total, 2);
+  const paged = await request('/finance/income?category=partner-investment&limit=2&page=2');
+  assert.equal(paged.items.length, 1);
+  assert.equal(paged.total, 3);
+  const finance = (await request('/finance/summary')).summary;
+  assert.equal(finance.income.other, 200000);
+  const analytics = await request('/finance/analytics');
+  assert.equal(analytics.incomeByHead.find((r) => r.label?.en === 'Partner investment').total, 200000);
+  assert.equal(analytics.monthly.reduce((sum, r) => sum + r.income, 0), finance.income.total);
+  const ledger = await request('/finance/transactions?type=income');
+  assert.equal(ledger.transactions.filter((r) => r.source === 'partner').length, 3);
+  assert.equal((await request(`/finance/income/${incomeEntry.id}`, admin, { amount: 1 }, 'PUT')).status, 409);
+  assert.equal((await request(`/finance/income/${incomeEntry.id}`, admin, undefined, 'DELETE')).status, 409);
+  assert.equal((await request('/finance/income', admin, { amount: 1, category: 'partner-investment' })).status, 400);
+  assert.equal((await request('/finance/income?from=2027-01-01&category=partner-investment')).total, 0);
+});
+
 test('server scopes invoice lists, details and payments to all linked children', async () => {
   const bills = await Promise.all(students.map((s) => createInvoice(invoiceBody(s))));
   await Payment.create(bills.map((bill) => ({ invoice: bill.id, student: bill.student, amount: 1 })));
@@ -384,4 +458,88 @@ test('payment corrections require approval and reconcile receipts, balances and 
   const refund = await request('/fees/adjustments', admin, { invoice: bill.id, payment: paid.item.id, type: 'refund', amount: 100, reason: 'Returned actual money' });
   assert.equal((await request(`/fees/adjustments/${refund.item.id}/review`, admin, { decision: 'approved', note: 'Return confirmed' })).status, 200);
   assert.equal((await request('/fees/adjustments', accountant, { ...body, amount: 50 })).status, 400);
+});
+
+test('net profit excludes capital, honors categories, snapshots allocations and prevents repeated or overlapping distributions', async () => {
+  const { Partner, PartnerDeposit } = await import('../src/models/Partner.js');
+  const { FinanceCategory, SalaryPayment } = await import('../src/models/Finance.js');
+  const { FeeAdjustment } = await import('../src/models/FeeWorkflow.js');
+  const { ProfitDistribution } = await import('../src/models/ProfitDistribution.js');
+  const { parseDay } = await import('../src/utils/financeDates.js');
+  await PartnerDeposit.deleteMany({});
+  await Partner.deleteMany({});
+  const day = parseDay('2018-01-15');
+  const [inc, excludedInc, exp, excludedExp] = await FinanceCategory.create([
+    { type: 'income', name: { en: 'Profit included income' } },
+    { type: 'income', name: { en: 'Profit excluded income' } },
+    { type: 'expense', name: { en: 'Profit included expense' } },
+    { type: 'expense', name: { en: 'Profit excluded expense' } },
+  ]);
+  await Income.create([{ category: inc.id, amount: 1000, date: day }, { category: excludedInc.id, amount: 200, date: day }, { amount: 50, date: day }]);
+  await Expense.create([{ category: exp.id, amount: 100, date: day }, { category: excludedExp.id, amount: 30, date: day }, { amount: 20, date: day }]);
+  await SalaryPayment.create({ staff: new mongoose.Types.ObjectId(), month: '2018-01', basic: 80, net: 80, paidAt: day });
+  const bill = await createInvoice(invoiceBody(students[0], 300));
+  const paid = await Payment.create({ invoice: bill.id, student: students[0].id, amount: 300, paidAt: day });
+  await FeeAdjustment.create({ invoice: bill.id, student: students[0].id, payment: paid.id, type: 'refund', status: 'approved', amount: 50, reason: 'Test refund', requestedBy: admin.id, reviewedBy: admin.id, reviewedAt: day });
+  const config = { from: '2018-01-01', to: '2018-01-31', incomeCategories: [inc.id, 'fees'], expenseCategories: [exp.id, 'salaries'] };
+  const options = await request('/finance/profit/options');
+  assert.equal(options.status, 200);
+  assert.ok(!options.income.some((c) => c.id === 'partner-investment'));
+  const accountant = await User.findOne({ role: 'accountant' });
+  assert.equal((await request('/finance/profit/preview', accountant, config)).status, 403);
+  assert.equal((await request('/finance/profit/preview', studentUser, config)).status, 403);
+  assert.equal((await request('/finance/profit/preview', admin, { ...config, incomeCategories: ['partner-investment'] })).status, 400);
+  assert.equal((await request('/finance/profit/preview', admin, { ...config, incomeCategories: [exp.id] })).status, 400);
+  assert.equal((await request('/finance/profit/preview', admin, { ...config, to: '2018-02-30' })).status, 400);
+  const preview = (await request('/finance/profit/preview', admin, config)).report;
+  assert.equal(preview.income, 1250);
+  assert.equal(preview.expense, 180);
+  assert.equal(preview.netProfit, 1070);
+  assert.equal((await request('/finance/profit/distributions', admin, { ...config, previewHash: preview.previewHash, requestKey: randomUUID() })).status, 400, 'no capital cannot be distributed');
+  const partners = await Partner.create(['Profit A', 'Profit B', 'Zero capital'].map((name) => ({ name, phone: '01700000000', address: 'Dhaka' })));
+  await PartnerDeposit.create([10000000, 5000000].map((amountCents, i) => ({ partner: partners[i].id, amountCents, date: day, requestKey: randomUUID(), recordedBy: admin.id })));
+  const selected = (await request('/finance/profit/preview', admin, config)).report;
+  assert.equal(selected.netProfit, 1070, '150000 of capital must not count as profit income');
+  assert.equal(selected.allocations.find((p) => p.id === partners[0].id).profit, 713.33);
+  assert.equal(selected.allocations.find((p) => p.id === partners[1].id).profit, 356.67);
+  assert.equal(selected.allocations.find((p) => p.id === partners[2].id).profit, 0);
+  const all = (await request('/finance/profit/preview', admin, { ...config, incomeCategories: options.income.map((c) => c.id), expenseCategories: options.expense.map((c) => c.id) })).report;
+  assert.equal(all.income, 1500);
+  assert.equal(all.expense, 230);
+  assert.equal(all.netProfit, 1270);
+  const lossConfig = { ...config, incomeCategories: [] };
+  const loss = (await request('/finance/profit/preview', admin, lossConfig)).report;
+  assert.equal(loss.netProfit, -180);
+  assert.equal((await request('/finance/profit/distributions', admin, { ...lossConfig, previewHash: loss.previewHash, requestKey: randomUUID() })).status, 400);
+  await Income.create({ category: inc.id, amount: 1, date: day });
+  assert.equal((await request('/finance/profit/distributions', admin, { ...config, previewHash: selected.previewHash, requestKey: randomUUID() })).status, 409, 'stale financial preview must be recalculated');
+  const fresh = (await request('/finance/profit/preview', admin, config)).report;
+  await PartnerDeposit.create({ partner: partners[1].id, amountCents: 1, date: day, requestKey: randomUUID(), recordedBy: admin.id });
+  assert.equal((await request('/finance/profit/distributions', admin, { ...config, previewHash: fresh.previewHash, requestKey: randomUUID() })).status, 409, 'capital changes must invalidate preview');
+  const ready = (await request('/finance/profit/preview', admin, config)).report;
+  const body = { ...config, previewHash: ready.previewHash, requestKey: randomUUID() };
+  assert.equal((await request('/finance/profit/distributions', accountant, body)).status, 403);
+  const attempts = await Promise.all([0, 1].map(() => request('/finance/profit/distributions', admin, body)));
+  assert.ok(attempts.every((r) => r.status === 201), JSON.stringify(attempts));
+  assert.equal(attempts[0].item.id, attempts[1].item.id);
+  assert.equal(await ProfitDistribution.countDocuments(), 1);
+  assert.equal(ready.allocations.reduce((sum, p) => sum + Math.round(p.profit * 100), 0), 107100);
+  assert.equal((await request('/finance/profit/distributions', admin, { ...body, requestKey: randomUUID() })).status, 409);
+  const overlapConfig = { ...config, from: '2018-01-15', to: '2018-02-01' };
+  const overlap = await request('/finance/profit/preview', admin, overlapConfig);
+  assert.equal(overlap.alreadyDistributed, true);
+  assert.equal((await request('/finance/profit/distributions', admin, { ...overlapConfig, previewHash: overlap.report.previewHash, requestKey: randomUUID() })).status, 409);
+  await PartnerDeposit.create({ partner: partners[1].id, amountCents: 9000000, date: day, requestKey: randomUUID(), recordedBy: admin.id });
+  const detail = await request(`/partners/${partners[0].id}`);
+  assert.equal(detail.profits.length, 1);
+  assert.equal(detail.profits[0].profit, ready.allocations.find((p) => p.id === partners[0].id).profit, 'past shares must not change after later deposits');
+  assert.deepEqual((await request('/finance/profit/distributions')).items[0].report, ready);
+  assert.equal((await request('/finance/profit/distributions', admin, body)).item.id, attempts[0].item.id, 'retry returns original even after capital changes');
+  // Two different preview keys racing on an undistributed period must yield one record.
+  const next = { ...config, from: '2018-02-01', to: '2018-02-28' };
+  await Income.create({ category: inc.id, amount: 100, date: parseDay('2018-02-10') });
+  const nextPreview = (await request('/finance/profit/preview', admin, next)).report;
+  const raced = await Promise.all([0, 1].map(() => request('/finance/profit/distributions', admin, { ...next, previewHash: nextPreview.previewHash, requestKey: randomUUID() })));
+  assert.deepEqual(raced.map((r) => r.status).sort(), [201, 409]);
+  assert.equal(await ProfitDistribution.countDocuments(), 2);
 });

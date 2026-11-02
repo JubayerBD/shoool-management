@@ -1,12 +1,14 @@
 import { schoolDate } from '../../utils/schoolDate.js';
+import { Link } from 'react-router-dom';
 import { getAll } from '../../api/getAll.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
 import { useToast } from '../../components/ui/Toast.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import { t as bt } from '../../utils/bilingual.js';
 import DataTable from '../../components/ui/DataTable.jsx';
-import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
+import RequestReversal, { DuplicateWarning } from './FinancialControls.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import ImageUpload from '../../components/ui/ImageUpload.jsx';
 import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
@@ -22,6 +24,7 @@ const today = () => schoolDate();
 export default function TransactionManager({ type }) {
   const { t, i18n } = useTranslation();
   const { push } = useToast();
+  const { user } = useAuth();
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
   const taka = t('common.taka');
   const isIncome = type === 'income';
@@ -51,7 +54,9 @@ export default function TransactionManager({ type }) {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
-  const [deleteId, setDeleteId] = useState(null);
+  const [reason, setReason] = useState('');
+  const [submissionKey, setSubmissionKey] = useState(crypto.randomUUID());
+  const [duplicate, setDuplicate] = useState(null);
   const [voucherTxn, setVoucherTxn] = useState(null);
 
   useEffect(() => {
@@ -94,12 +99,12 @@ export default function TransactionManager({ type }) {
   const total = useMemo(() => rows.reduce((s, r) => s + (r.amount || 0), 0), [rows]);
 
   const openAdd = () => {
-    setEditing(null);
+    setEditing(null); setReason(''); setSubmissionKey(crypto.randomUUID());
     setForm(emptyForm());
     setOpen(true);
   };
   const openEdit = (r) => {
-    setEditing(r);
+    setEditing(r); setReason(''); setSubmissionKey(crypto.randomUUID());
     setForm({
       category: r.category?.id || r.category?._id || r.category || '',
       amount: r.amount ?? '',
@@ -116,45 +121,36 @@ export default function TransactionManager({ type }) {
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
-  const submit = async (e) => {
-    e.preventDefault();
+  const save = async (payload, duplicateConfirmed = false) => {
     setSaving(true);
     try {
-      const payload = { ...form, amount: Number(form.amount) };
-      if (!payload.category) delete payload.category;
-      if (editing) await api.put(`${endpoint}/${editing.id || editing._id}`, payload);
-      else await api.post(endpoint, payload);
-      setOpen(false);
-      push(t('finance.saved'));
+      if (editing) await api.post('/finance/corrections', { targetType: isIncome ? 'income' : 'expense', targetId: editing.id || editing._id, operation: 'replace', proposed: payload, reason, requestKey: submissionKey, duplicateConfirmed });
+      else await api.post(endpoint, { ...payload, requestKey: submissionKey, duplicateConfirmed });
+      setOpen(false); setDuplicate(null);
+      push(editing ? (lang === 'bn' ? '\u0985\u09a8\u09c1\u09ae\u09cb\u09a6\u09a8\u09c7\u09b0 \u099c\u09a8\u09cd\u09af \u0986\u09ac\u09c7\u09a6\u09a8 \u099c\u09ae\u09be \u09b9\u09af\u09bc\u09c7\u099b\u09c7' : 'Correction requested for admin approval') : t('finance.saved'));
       load();
     } catch (err) {
-      push(err.response?.data?.error?.message || 'Error', 'error');
-    } finally {
-      setSaving(false);
-    }
+      if (err.response?.data?.error?.details?.code === 'DUPLICATE_DOCUMENT') setDuplicate({ payload, matches: err.response.data.error.details.matches });
+      else push(err.response?.data?.error?.message || 'Error', 'error');
+    } finally { setSaving(false); }
   };
-
-  const handleDelete = async () => {
-    try {
-      await api.delete(`${endpoint}/${deleteId}`);
-      push(t('finance.deleted'));
-      load();
-    } catch (err) {
-      push(err.response?.data?.error?.message || 'Error', 'error');
-    } finally {
-      setDeleteId(null);
-    }
+  const submit = async (e) => {
+    e.preventDefault();
+    const payload = { ...form, amount: Number(form.amount), reference: form.reference.trim() };
+    if (!payload.category) delete payload.category;
+    await save(payload);
   };
 
   const columns = [
-    { key: 'date', header: t('finance.date'), render: (r) => new Date(r.date).toLocaleDateString() },
+    { key: 'date', header: t('finance.date'), render: (r) => <div>{schoolDate(r.date)}{r.isReversed && <span className="block text-xs text-amber-700">Reversed</span>}{r.isCorrection && <span className="block text-xs text-amber-700">Approved reversal</span>}</div> },
     {
       key: 'category',
       header: t('finance.category'),
       render: (r) => bt(r.category?.name, lang) || '—',
     },
-    { key: 'party', header: partyLabel, render: (r) => r[partyKey] || '—' },
-    { key: 'method', header: t('finance.method'), render: (r) => t(`finance.methods.${r.method}`) },
+    { key: 'party', header: partyLabel, render: (r) => r.partner && user.role === 'admin' ? <Link className="text-brand-600 hover:underline" to={`/partners/${r.partner}`}>{r[partyKey]}</Link> : r[partyKey] || '—' },
+    { key: 'method', header: t('finance.method'), render: (r) => r.method ? t(`finance.methods.${r.method}`) : '—' },
+    { key: 'reference', header: isIncome ? t('finance.invoiceNo') : t('finance.voucherNo'), render: (r) => r.reference || '—' },
     {
       key: 'amount',
       header: t('finance.amount'),
@@ -170,7 +166,7 @@ export default function TransactionManager({ type }) {
       key: 'actions',
       header: t('common.actions'),
       className: 'text-right',
-      render: (r) => (
+      render: (r) => r.isCorrection ? <Link className="text-xs text-brand-600" to="/finance?tab=corrections">View correction</Link> : (
         <div className="flex justify-end gap-2">
           <button
             type="button"
@@ -179,20 +175,15 @@ export default function TransactionManager({ type }) {
           >
             🧾 {isIncome ? t('finance.receiptBtn') : t('finance.voucherBtn')}
           </button>
-          <button
+          {!r.partnerDeposit && !r.isReversed && <><button
             type="button"
             onClick={() => openEdit(r)}
             className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100"
           >
             {t('common.edit')}
           </button>
-          <button
-            type="button"
-            onClick={() => setDeleteId(r.id || r._id)}
-            className="rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-          >
-            {t('common.delete')}
-          </button>
+          <RequestReversal type={isIncome ? 'income' : 'expense'} id={r.id || r._id} summary={`${r.reference} - ${r.amount}`} onRequested={load} /></>}
+
         </div>
       ),
     },
@@ -313,16 +304,17 @@ export default function TransactionManager({ type }) {
               disabled={saving}
               className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
             >
-              {saving ? t('common.saving') : t('common.save')}
+              {saving ? t('common.saving') : editing ? (lang === 'bn' ? '\u09b8\u0982\u09b6\u09cb\u09a7\u09a8\u09c7\u09b0 \u0986\u09ac\u09c7\u09a6\u09a8' : 'Request correction') : t('common.save')}
             </button>
           </>
         }
       >
         <form id="txn-form" onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {editing && <div className="space-y-2 sm:col-span-2"><p className="text-sm text-amber-700">The original entry stays unchanged until admin approval. Approval posts a reversal and replacement using the approval date.</p><Field label="Correction reason" required><TextInput required maxLength={1000} value={reason} onChange={(e) => setReason(e.target.value)} /></Field></div>}
           <Field label={t('finance.category')}>
             <Select value={form.category} onChange={(e) => setField('category', e.target.value)}>
               <option value="">—</option>
-              {categories.map((c) => (
+              {categories.filter((c) => c.id !== 'partner-investment').map((c) => (
                 <option key={c.id || c._id} value={c.id || c._id}>
                   {bt(c.name, lang)}
                 </option>
@@ -340,7 +332,7 @@ export default function TransactionManager({ type }) {
             />
           </Field>
           <Field label={t('finance.date')} required>
-            <TextInput type="date" value={form.date} onChange={(e) => setField('date', e.target.value)} />
+            <TextInput type="date" disabled={Boolean(editing)} value={form.date} onChange={(e) => setField('date', e.target.value)} />
           </Field>
           <Field label={t('finance.method')}>
             <Select value={form.method} onChange={(e) => setField('method', e.target.value)}>
@@ -354,8 +346,8 @@ export default function TransactionManager({ type }) {
           <Field label={partyLabel}>
             <TextInput value={form[partyKey]} onChange={(e) => setField(partyKey, e.target.value)} />
           </Field>
-          <Field label={t('finance.reference')}>
-            <TextInput value={form.reference} onChange={(e) => setField('reference', e.target.value)} />
+          <Field label={isIncome ? t('finance.invoiceNo') : t('finance.voucherNo')} required>
+            <TextInput type="text" required pattern={'.*\\S.*'} maxLength={200} value={form.reference} onChange={(e) => setField('reference', e.target.value)} />
           </Field>
           <div className="sm:col-span-2">
             <Field label={t('finance.note')}>
@@ -401,7 +393,9 @@ export default function TransactionManager({ type }) {
         </form>
       </Modal>
 
-      <ConfirmDialog open={!!deleteId} onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />
+      <Modal open={Boolean(duplicate)} onClose={() => !saving && setDuplicate(null)} title={lang === 'bn' ? '\u09a8\u09a5\u09bf \u09a8\u09ae\u09cd\u09ac\u09b0 \u09af\u09be\u099a\u09be\u0987' : 'Check duplicate document number'}>
+        {duplicate && <div className="space-y-4"><DuplicateWarning matches={duplicate.matches} /><div className="flex justify-end gap-3"><button disabled={saving} onClick={() => setDuplicate(null)}>{t('common.cancel')}</button><button disabled={saving} className="rounded-lg bg-amber-600 px-4 py-2 text-sm text-white" onClick={() => save(duplicate.payload, true)}>Save anyway</button></div></div>}
+      </Modal>
 
       <TransactionVoucher txn={voucherTxn} type={type} onClose={() => setVoucherTxn(null)} />
     </div>

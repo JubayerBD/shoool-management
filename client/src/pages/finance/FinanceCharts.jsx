@@ -9,7 +9,7 @@ const PALETTE = [
 ];
 
 export function SummaryCards({ summary }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const taka = t('common.taka');
   if (!summary) return null;
   const money = (n) => `${taka}${Number(n || 0).toLocaleString()}`;
@@ -38,7 +38,7 @@ export function SummaryCards({ summary }) {
         sub={`${t('finance.salary')}: ${money(summary.expense?.salary)} · ${t('finance.general')}: ${money(summary.expense?.general)}`}
       />
       <Card
-        label={t('finance.net')}
+        label={i18n.language?.startsWith('bn') ? 'আয় বিয়োগ ব্যয় (লাভ পরিশোধের আগে)' : 'Income less expenses (before profit payments)'}
         value={money(net)}
         accent={net >= 0 ? 'text-brand-600' : 'text-red-600'}
       />
@@ -62,11 +62,11 @@ export function HeadCharts({ incomeByHead = [], expenseByHead = [] }) {
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div className="rounded-xl bg-white p-5 shadow-sm">
         <h3 className="mb-4 text-sm font-semibold text-slate-700">{t('finance.reports.incomeByHead')}</h3>
-        {inc.length ? <DonutChart segments={inc} /> : <p className="text-sm text-slate-400">{t('finance.reports.noData')}</p>}
+        {incomeByHead.some((x) => x.total < 0) ? <BarChart data={incomeByHead.map((x) => ({ label: bt(x.label, lang) || '?', value: x.total }))} unit={t('common.taka')} /> : inc.length ? <DonutChart segments={inc} /> : <p className="text-sm text-slate-400">{t('finance.reports.noData')}</p>}
       </div>
       <div className="rounded-xl bg-white p-5 shadow-sm">
         <h3 className="mb-4 text-sm font-semibold text-slate-700">{t('finance.reports.expenseByHead')}</h3>
-        {exp.length ? <DonutChart segments={exp} /> : <p className="text-sm text-slate-400">{t('finance.reports.noData')}</p>}
+        {expenseByHead.some((x) => x.total < 0) ? <BarChart data={expenseByHead.map((x) => ({ label: bt(x.label, lang) || '?', value: x.total }))} unit={t('common.taka')} /> : exp.length ? <DonutChart segments={exp} /> : <p className="text-sm text-slate-400">{t('finance.reports.noData')}</p>}
       </div>
     </div>
   );
@@ -74,7 +74,7 @@ export function HeadCharts({ incomeByHead = [], expenseByHead = [] }) {
 
 export function MonthlyCharts({ monthly = [] }) {
   const { t } = useTranslation();
-  const hasData = monthly.some((m) => m.income > 0 || m.expense > 0);
+  const hasData = monthly.some((m) => m.income !== 0 || m.expense !== 0);
   if (!hasData) return null;
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

@@ -1,5 +1,19 @@
 import { ApiError } from '../utils/ApiError.js';
 
+// API forms submit data, never MongoDB operators or prototype mutation keys.
+export function rejectUnsafePayload(req, _res, next) {
+  const pending = [req.body];
+  while (pending.length) {
+    const value = pending.pop();
+    if (!value || typeof value !== 'object') continue;
+    for (const [key, child] of Object.entries(value)) {
+      if (key.startsWith('$') || key.includes('.') || ['__proto__', 'prototype', 'constructor'].includes(key)) throw ApiError.badRequest('Unsupported field in request');
+      if (child && typeof child === 'object') pending.push(child);
+    }
+  }
+  next();
+}
+
 /** Baseline browser protections for every response. */
 export function securityHeaders(req, res, next) {
   res.setHeader('X-Content-Type-Options', 'nosniff');

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import FinanceOverview from './FinanceOverview.jsx';
 import Income from './Income.jsx';
@@ -6,9 +6,11 @@ import Expenses from './Expenses.jsx';
 import Salaries from './Salaries.jsx';
 import FinanceReports from './FinanceReports.jsx';
 import FinanceSettings from './FinanceSettings.jsx';
+import NetProfit from './NetProfit.jsx';
+import Corrections from './Corrections.jsx';
 
 export default function Finance() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const tabs = [
     { key: 'overview', label: t('finance.tabs.overview'), el: <FinanceOverview /> },
@@ -16,10 +18,15 @@ export default function Finance() {
     { key: 'expenses', label: t('finance.tabs.expenses'), el: <Expenses /> },
     { key: 'salaries', label: t('finance.tabs.salaries'), el: <Salaries /> },
     { key: 'reports', label: t('finance.tabs.reports'), el: <FinanceReports /> },
+    { key: 'profit', label: i18n.language?.startsWith('bn') ? 'নিট লাভ' : 'Net profit', el: <NetProfit /> },
+    { key: 'corrections', label: i18n.language?.startsWith('bn') ? 'সংশোধন' : 'Corrections', el: <Corrections /> },
     { key: 'settings', label: t('finance.tabs.settings'), el: <FinanceSettings /> },
   ];
 
-  const [active, setActive] = useState('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const active = requestedTab === 'balance' ? 'overview' : requestedTab || 'overview';
+  const setActive = (key) => setSearchParams({ tab: key });
   const activeTab = tabs.find((x) => x.key === active) || tabs[0];
 
   return (

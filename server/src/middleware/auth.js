@@ -1,6 +1,7 @@
 import { verifyToken } from '../utils/jwt.js';
 import { ApiError } from '../utils/ApiError.js';
 import { User } from '../models/User.js';
+import { assertRoleModuleAccess } from '../utils/roleModules.js';
 
 /** Require a valid Bearer token; attaches req.user (lean User doc). */
 export async function requireAuth(req, _res, next) {
@@ -17,8 +18,11 @@ export async function requireAuth(req, _res, next) {
 
   const user = await User.findById(payload.sub).lean();
   if (!user || !user.isActive) throw ApiError.unauthorized('Account not found or disabled');
+  if ((payload.sessionVersion || 0) !== (user.sessionVersion || 0)) throw ApiError.unauthorized('Session expired. Please log in again.');
+  user.id = String(user._id);
 
   req.user = user;
+  assertRoleModuleAccess(req, user);
   next();
 }
 

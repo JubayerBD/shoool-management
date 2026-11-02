@@ -25,12 +25,14 @@ const userSchema = new Schema(
     // For parents: the students they are guardian of.
     children: [{ type: Schema.Types.ObjectId, ref: 'Student' }],
     lastLoginAt: { type: Date },
+    sessionVersion: { type: Number, default: 0, select: true },
   },
   baseSchemaOptions
 );
 
 userSchema.methods.setPassword = async function setPassword(plain) {
   this.passwordHash = await bcrypt.hash(plain, 10);
+  if (!this.isNew) this.sessionVersion = (this.sessionVersion || 0) + 1;
 };
 
 userSchema.methods.verifyPassword = function verifyPassword(plain) {

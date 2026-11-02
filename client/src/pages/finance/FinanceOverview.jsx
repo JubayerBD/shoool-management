@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
 import { t as bt } from '../../utils/bilingual.js';
 import { SummaryCards, HeadCharts, MonthlyCharts } from './FinanceCharts.jsx';
+import CurrentBalance from './CurrentBalance.jsx';
 
 function monthRange() {
   const to = schoolDate();
@@ -41,6 +42,7 @@ export default function FinanceOverview() {
 
   return (
     <div className="space-y-5">
+      <CurrentBalance />
       <div className="text-sm font-medium text-slate-500">{t('finance.thisMonth')}</div>
       <SummaryCards summary={summary} />
       {analytics && <MonthlyCharts monthly={analytics.monthly} />}

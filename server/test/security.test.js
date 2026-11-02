@@ -136,7 +136,7 @@ test('list queries ignore operator injection and unsafe sort values', async () =
 test('finance entries enforce positive 2-decimal amounts, matching categories and valid salaries', async () => {
   const income = await FinanceCategory.create({ type: 'income', name: { en: 'Donation' } });
   const expense = await FinanceCategory.create({ type: 'expense', name: { en: 'Utilities' } });
-  const add = (body) => request('/finance/income', accountant, body);
+  const add = (body) => request('/finance/income', accountant, { reference: 'INV-SEC-001', ...body });
   assert.equal((await add({ amount: 0, category: income.id })).status, 400);
   assert.equal((await add({ amount: -5, category: income.id })).status, 400);
   assert.equal((await add({ amount: 10.999, category: income.id })).status, 400);
@@ -177,7 +177,7 @@ test('notices honour audience and expiry; teacher contact details are hidden fro
   const titles = async (user) => (await request('/schedule/notices?limit=100', user)).items.map((n) => n.title.en);
   const student = await titles(studentUser);
   assert.ok(student.includes('Everyone') && !student.includes('Teachers only') && !student.includes('Old news'));
-  assert.ok((await titles(teacherUser)).includes('Teachers only'));
+  assert.equal((await request('/schedule/notices', teacherUser)).status, 403);
   assert.ok((await titles(admin)).includes('Old news'));
   await Teacher.create({ employeeId: 'SEC-T2', name: { en: 'Visible' }, phone: '01711111111', email: 'private@school.test' });
   const directory = (await request('/people/teachers', studentUser)).items;

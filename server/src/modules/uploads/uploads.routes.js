@@ -11,10 +11,22 @@ const EXTENSIONS = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.
 /** True when the file's leading bytes really are the image type it claims to be. */
 function looksLike(buffer, mimetype) {
   const startsWith = (...bytes) => bytes.every((byte, i) => buffer[i] === byte);
-  if (mimetype === 'image/jpeg') return startsWith(0xff, 0xd8, 0xff);
-  if (mimetype === 'image/png') return startsWith(0x89, 0x50, 0x4e, 0x47);
-  if (mimetype === 'image/gif') return startsWith(0x47, 0x49, 0x46, 0x38);
-  if (mimetype === 'image/webp') return buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP';
+  if (mimetype === 'image/jpeg') return buffer.length >= 4 && startsWith(0xff, 0xd8, 0xff) && buffer.at(-2) === 0xff && buffer.at(-1) === 0xd9;
+  if (mimetype === 'image/png') {
+    if (buffer.length < 45 || !startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return false;
+    let offset = 8, imageData = false;
+    while (offset + 12 <= buffer.length) {
+      const length = buffer.readUInt32BE(offset), type = buffer.toString('ascii', offset + 4, offset + 8);
+      if (offset + length + 12 > buffer.length) return false;
+      if (offset === 8 && (type !== 'IHDR' || length !== 13 || !buffer.readUInt32BE(16) || !buffer.readUInt32BE(20))) return false;
+      if (type === 'IDAT') imageData = true;
+      offset += length + 12;
+      if (type === 'IEND') return length === 0 && offset === buffer.length && imageData;
+    }
+    return false;
+  }
+  if (mimetype === 'image/gif') return buffer.length >= 14 && ['GIF87a', 'GIF89a'].includes(buffer.subarray(0, 6).toString()) && buffer.at(-1) === 0x3b;
+  if (mimetype === 'image/webp') return buffer.length >= 20 && buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP' && buffer.readUInt32LE(4) + 8 === buffer.length;
   return false;
 }
 

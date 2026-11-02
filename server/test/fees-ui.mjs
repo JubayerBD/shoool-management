@@ -23,7 +23,7 @@ try {
   process.env.MONGO_URI = mongo.getUri('fees_ui');
   process.env.JWT_SECRET = 'isolated-ui-test-key';
   process.env.NODE_ENV = 'test';
-  process.env.SERVE_CLIENT = 'true';
+  process.env.SERVE_CLIENT = 'true'; process.env.BACKUP_DIR = path.resolve('../.data/qa-browser-backups');
   await mongoose.connect(process.env.MONGO_URI);
   const { User } = await import('../src/models/User.js');
   const { Student } = await import('../src/models/People.js');

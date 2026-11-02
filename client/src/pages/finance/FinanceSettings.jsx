@@ -6,10 +6,13 @@ import { t as bt } from '../../utils/bilingual.js';
 import Modal from '../../components/ui/Modal.jsx';
 import ConfirmDialog from '../../components/ui/ConfirmDialog.jsx';
 import BilingualInput from '../../components/ui/BilingualInput.jsx';
+import BackupsPanel from './BackupsPanel.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 export default function FinanceSettings() {
   const { t, i18n } = useTranslation();
   const { push } = useToast();
+  const { user } = useAuth();
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
 
   const [income, setIncome] = useState([]);
@@ -123,6 +126,7 @@ export default function FinanceSettings() {
 
   return (
     <div className="space-y-5">
+      {user.role === 'admin' && <BackupsPanel />}
       {loading ? (
         <div className="text-slate-500">{t('common.loading')}</div>
       ) : (

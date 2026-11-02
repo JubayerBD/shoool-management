@@ -8,6 +8,8 @@ import { Section } from '../../models/Academic.js';
 import { Student } from '../../models/People.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { assertStudentAccess, isSelfService, ownStudentIds, requireAcademicAccess } from '../../utils/access.js';
+import { parseDay, schoolDate } from '../../utils/financeDates.js';
+import { paginated } from '../../utils/pagination.js';
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
 
@@ -15,7 +17,7 @@ const router = Router();
 
 const bulkSchema = z.object({
   section: objectId,
-  date: z.coerce.date(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   records: z
     .array(
       z.object({
@@ -29,9 +31,8 @@ const bulkSchema = z.object({
 
 /** Normalize a date to midnight UTC so one record maps to one calendar day. */
 function dayStart(date) {
-  const d = new Date(date);
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
+  parseDay(date); // Reject impossible calendar dates before UTC normalization.
+  return new Date(`${date}T00:00:00.000Z`);
 }
 
 // Bulk upsert attendance for a whole section on a given date.
@@ -45,9 +46,10 @@ router.post(
     const day = dayStart(date);
 
     // Bangladesh is UTC+6; allow "today" there but never a future day.
-    if (day > dayStart(Date.now() + 6 * 3600 * 1000)) throw ApiError.badRequest('Attendance cannot be marked for a future date');
+    if (date > schoolDate()) throw ApiError.badRequest('Attendance cannot be marked for a future date');
     if (!(await Section.exists({ _id: section }))) throw ApiError.badRequest('Section not found');
     const ids = [...new Set(records.map((r) => r.student))];
+    if (ids.length !== records.length) throw ApiError.badRequest('A student can appear only once in an attendance batch');
     if ((await Student.countDocuments({ _id: { $in: ids }, section })) !== ids.length) {
       throw ApiError.badRequest('Every student must belong to the selected section');
     }
@@ -90,15 +92,12 @@ router.get('/', requireAuth, async (req, res) => {
     filter.student = student || { $in: ownStudentIds(req.user) };
   } else if (student) filter.student = student;
   if (from || to) {
+    if (from && to && from > to) throw ApiError.badRequest('From date must not be after to date');
     filter.date = {};
     if (from) filter.date.$gte = dayStart(from);
     if (to) filter.date.$lte = dayStart(to);
   }
-  const items = await Attendance.find(filter)
-    .populate('student', 'name admissionNo roll')
-    .sort({ date: -1 })
-    .limit(500);
-  res.json({ items });
+  res.json(await paginated(Attendance, filter, req.query, { path: 'student', select: 'name admissionNo roll' }, { date: -1 }));
 });
 
 // Per-student summary counts (for dashboards / report cards).

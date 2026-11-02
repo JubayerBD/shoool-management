@@ -7,7 +7,8 @@ import 'express-async-errors';
 
 import { env } from './config/env.js';
 import { notFoundHandler, errorHandler } from './middleware/error.js';
-import { securityHeaders } from './middleware/security.js';
+import { securityHeaders, rejectUnsafePayload } from './middleware/security.js';
+import { activityLogging } from './middleware/activity.js';
 
 import authRoutes from './modules/auth/auth.routes.js';
 import academicsRoutes from './modules/academics/academics.routes.js';
@@ -16,9 +17,16 @@ import attendanceRoutes from './modules/attendance/attendance.routes.js';
 import examsRoutes from './modules/exams/exams.routes.js';
 import feesRoutes from './modules/fees/fees.routes.js';
 import scheduleRoutes from './modules/schedule/schedule.routes.js';
+import calendarRoutes from './modules/schedule/calendar.routes.js';
 import dashboardRoutes from './modules/dashboard/dashboard.routes.js';
 import usersRoutes from './modules/users/users.routes.js';
 import financeRoutes from './modules/finance/finance.routes.js';
+import partnersRoutes from './modules/partners/partners.routes.js';
+import profitRoutes from './modules/finance/profit.routes.js';
+import balanceRoutes from './modules/finance/balance.routes.js';
+import activityRoutes from './modules/activity/activity.routes.js';
+import backupsRoutes from './modules/backups/backups.routes.js';
+import correctionsRoutes from './modules/finance/corrections.routes.js';
 import { uploadsRouter, uploadsDir } from './modules/uploads/uploads.routes.js';
 
 export function createApp() {
@@ -48,9 +56,11 @@ export function createApp() {
     return corsMw(req, res, next);
   });
   app.use(express.json({ limit: '2mb' }));
+  app.use(activityLogging);
+  app.use(rejectUnsafePayload);
   if (env.nodeEnv !== 'test') app.use(morgan('dev'));
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+  app.get('/api/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString(), release: process.env.RENDER_GIT_COMMIT || null }));
 
   app.use('/api/auth', authRoutes);
   app.use('/api/academics', academicsRoutes);
@@ -58,10 +68,17 @@ export function createApp() {
   app.use('/api/attendance', attendanceRoutes);
   app.use('/api/exams', examsRoutes);
   app.use('/api/fees', feesRoutes);
+  app.use('/api/calendar', calendarRoutes);
   app.use('/api/schedule', scheduleRoutes);
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/users', usersRoutes);
+  app.use('/api/activity-logs', activityRoutes);
+  app.use('/api/backups', backupsRoutes);
   app.use('/api/finance', financeRoutes);
+  app.use('/api/finance', correctionsRoutes);
+  app.use('/api/finance/profit', profitRoutes);
+  app.use('/api/finance/balance', balanceRoutes);
+  app.use('/api/partners', partnersRoutes);
   app.use('/api/uploads', uploadsRouter);
   // Serve uploaded images (long-cached, immutable filenames).
   app.use('/api/files', express.static(uploadsDir, { maxAge: '30d', immutable: true }));

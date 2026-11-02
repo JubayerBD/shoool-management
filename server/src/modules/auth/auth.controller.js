@@ -60,7 +60,8 @@ export async function login(req, res) {
   user.lastLoginAt = new Date();
   await user.save();
 
-  const token = signToken({ sub: user.id, role: user.role });
+  const token = signToken({ sub: user.id, role: user.role, sessionVersion: user.sessionVersion || 0 });
+  req.user = user; // Attribute the login event without logging credentials.
   res.json({ token, user: publicUser(user) });
 }
 

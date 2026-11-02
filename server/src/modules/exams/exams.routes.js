@@ -66,7 +66,21 @@ router.post(
   validate(marksSchema),
   async (req, res) => {
     const { exam, marks } = req.body;
-    if (!(await Exam.exists({ _id: exam }))) throw ApiError.badRequest('Exam not found');
+    const examDoc = await Exam.findById(exam).lean();
+    if (!examDoc) throw ApiError.badRequest('Exam not found');
+    const students = await Student.find({ _id: { $in: marks.map((m) => m.student) } }).lean();
+    const subjects = await Subject.find({ _id: { $in: marks.map((m) => m.subject) } }).lean();
+    const seen = new Set();
+    for (const mark of marks) {
+      const student = students.find((s) => String(s._id) === mark.student);
+      const subject = subjects.find((s) => String(s._id) === mark.subject);
+      if (!student || !subject) throw ApiError.badRequest('Every mark must reference an existing student and subject');
+      if (subject.class && String(subject.class) !== String(student.class)) throw ApiError.badRequest('Subject must belong to the student’s class');
+      if (examDoc.academicYear && student.academicYear && String(examDoc.academicYear) !== String(student.academicYear)) throw ApiError.badRequest('Exam and student must belong to the same academic year');
+      const key = `${mark.student}-${mark.subject}`;
+      if (seen.has(key)) throw ApiError.badRequest('A student and subject can appear only once in a marks batch');
+      seen.add(key);
+    }
     const ops = marks.map((m) => {
       const { grade, gradePoint } = gradeFromMarks(m.marksObtained, m.fullMarks);
       return {
@@ -120,6 +134,7 @@ router.get('/tabulation', requireAuth, requireRole('admin', 'teacher'), async (r
   if (!exam || !section) throw ApiError.badRequest('exam and section are required');
 
   const sectionDoc = await Section.findById(section).lean();
+  if (!sectionDoc || !await Exam.exists({ _id: exam })) throw ApiError.notFound('Exam or section not found');
   const classId = sectionDoc?.class;
 
   const [students, subjects] = await Promise.all([
@@ -192,6 +207,7 @@ router.get('/tabulation', requireAuth, requireRole('admin', 'teacher'), async (r
 router.get('/report-cards', requireAuth, requireRole('admin', 'teacher'), async (req, res) => {
   const { exam, section } = req.query;
   if (!exam || !section) throw ApiError.badRequest('exam and section are required');
+  if (!await Section.exists({ _id: section }) || !await Exam.exists({ _id: exam })) throw ApiError.notFound('Exam or section not found');
 
   const students = await Student.find({ section })
     .sort({ roll: 1 })
@@ -232,6 +248,7 @@ router.get('/report-card', requireAuth, async (req, res) => {
   const { exam, student } = req.query;
   if (!exam || !student) throw ApiError.badRequest('exam and student are required');
   assertStudentAccess(req.user, student);
+  if (!await Student.exists({ _id: student }) || !await Exam.exists({ _id: exam })) throw ApiError.notFound('Exam or student not found');
   if (isSelfService(req.user) && !(await Exam.exists({ _id: exam, isPublished: true }))) {
     throw ApiError.forbidden('Results for this exam have not been published yet');
   }

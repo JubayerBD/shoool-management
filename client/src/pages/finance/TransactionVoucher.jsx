@@ -13,7 +13,7 @@ export default function TransactionVoucher({ txn, type, onClose }) {
   const { d, bt, date } = useDocText();
   const isIncome = type === 'income';
 
-  const title = isIncome ? d('receipt') : d('paymentVoucher');
+  const title = `${isIncome ? d('receipt') : d('paymentVoucher')}${txn?.isReversed ? ' (REVERSED)' : ''}`;
   const voucherNo = txn ? `${isIncome ? 'CR' : 'DV'}-${String(txn.id || txn._id || '').slice(-6).toUpperCase()}` : '';
 
   return (
@@ -30,8 +30,8 @@ export default function TransactionVoucher({ txn, type, onClose }) {
             [isIncome ? d('receiptNo') : d('voucherNo'), voucherNo],
             [d('date'), date(txn.date)],
             [isIncome ? d('receivedFrom') : d('paidTo'), isIncome ? txn.source : txn.payee],
-            [d('method'), t(`finance.methods.${txn.method}`)],
-            txn.reference && [d('reference'), txn.reference],
+            [d('method'), txn.method ? t(`finance.methods.${txn.method}`) : '—'],
+            txn.reference && [isIncome ? t('finance.invoiceNo') : t('finance.voucherNo'), txn.reference],
           ]} />
           <DocItems
             items={[{ label: bt(txn.category?.name) || title, sub: txn.note, amount: txn.amount }]}
