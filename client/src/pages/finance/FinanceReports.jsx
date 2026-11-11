@@ -133,7 +133,7 @@ export default function FinanceReports() {
                 <tbody className="divide-y divide-slate-100">
                   {txns.map((r) => (
                     <tr key={`${r.source}-${r.id}`}>
-                      <td className="px-4 py-2 text-slate-500">{new Date(r.date).toLocaleDateString()}</td>
+                      <td className="px-4 py-2 text-slate-500">{r.date ? new Date(r.date).toLocaleDateString() : '—'}</td>
                       <td className="px-4 py-2">
                         <span
                           className={`rounded-full px-2 py-0.5 text-xs font-medium ${

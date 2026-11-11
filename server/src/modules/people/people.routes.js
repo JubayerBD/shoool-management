@@ -12,6 +12,8 @@ import { blockIfInUse } from '../../utils/inUse.js';
 import { importStudents, importUpload } from './students.import.js';
 import { isSelfService, ownStudentIds } from '../../utils/access.js';
 import { ApiError } from '../../utils/ApiError.js';
+import { Enrollment } from '../../models/Enrollment.js';
+import { listStudents, getStudent } from './studentEnrollments.js';
 
 const router = Router();
 
@@ -21,7 +23,7 @@ const students = crudController(Student, {
   filterable: ['class', 'section', 'academicYear', 'status', 'gender'],
   defaultSort: { roll: 1 },
   // Money and results history must survive: mark the student inactive/graduated instead.
-  guardRemove: blockIfInUse([[Invoice, 'student', 'fee invoices'], [Payment, 'student', 'fee payments'], [Attendance, 'student', 'attendance records'], [Mark, 'student', 'exam marks']]),
+  guardRemove: blockIfInUse([[Enrollment, 'student', 'enrollment history'], [Invoice, 'student', 'fee invoices'], [Payment, 'student', 'fee payments'], [Attendance, 'student', 'attendance records'], [Mark, 'student', 'exam marks']]),
 });
 
 const teachers = crudController(Teacher, {
@@ -42,14 +44,14 @@ router.post(
 );
 
 // Students: staff can read; admins manage.
-router.get('/students', requireAuth, requireRole('admin', 'teacher', 'accountant'), students.list);
+router.get('/students', requireAuth, requireRole('admin', 'teacher', 'accountant'), listStudents);
 router.get('/students/:id', requireAuth, (req, _res, next) => {
   // Students see only themselves; parents only their children.
   if (isSelfService(req.user) && !ownStudentIds(req.user).includes(String(req.params.id))) {
     throw ApiError.forbidden('You do not have permission to view this student');
   }
   next();
-}, students.get);
+}, getStudent);
 router.post('/students', requireAuth, requireRole('admin'), students.create);
 router.put('/students/:id', requireAuth, requireRole('admin'), students.update);
 router.delete('/students/:id', requireAuth, requireRole('admin'), students.remove);

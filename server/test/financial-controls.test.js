@@ -77,7 +77,7 @@ test('rejected reversals do not change totals; approved expense reversals are po
 
 test('salary reversals preserve history and allow the correct payment for the same staff/month', async () => {
   const staff = await m.Teacher.create({ name: { en: 'Staff' }, employeeId: 'SAL-CONTROL' });
-  const body = { staff: staff.id, month: today.slice(0, 7), basic: 100, paidAt: today };
+  const body = { staff: staff.id, month: today.slice(0, 7), basic: 100, paidAt: today, reference: 'SAL-CONTROL-001' };
   const paid = await request('/finance/salaries', body); assert.equal(paid.status, 201);
   const reverse = await correction('salary', paid.item.id); assert.equal((await approve(reverse.item)).status, 200);
   assert.equal((await request('/finance/salaries', { ...body, basic: 80 })).status, 201);

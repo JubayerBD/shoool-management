@@ -15,7 +15,11 @@ function emptyStudent() {
     admissionNo: '',
     roll: '',
     name: { en: '', bn: '' },
-    gender: 'male',
+    gender: '',
+    contactPhone: '',
+    birthRegistrationNo: '',
+    department: '',
+    notes: '',
     dateOfBirth: '',
     bloodGroup: '',
     photoUrl: '',
@@ -34,7 +38,11 @@ function toForm(student) {
     admissionNo: student.admissionNo || '',
     roll: student.roll ?? '',
     name: { en: student.name?.en || '', bn: student.name?.bn || '' },
-    gender: student.gender || 'male',
+    gender: student.gender || '',
+    contactPhone: student.contactPhone || '',
+    birthRegistrationNo: student.birthRegistrationNo || '',
+    department: student.department || '',
+    notes: student.notes || '',
     dateOfBirth: student.dateOfBirth ? student.dateOfBirth.slice(0, 10) : '',
     bloodGroup: student.bloodGroup || '',
     photoUrl: student.photoUrl || '',
@@ -87,6 +95,10 @@ export default function StudentForm({ open, onClose, onSubmit, student, classes,
       admissionNo: form.admissionNo.trim(),
       name: form.name,
       gender: form.gender,
+      contactPhone: form.contactPhone.trim(),
+      birthRegistrationNo: form.birthRegistrationNo.trim(),
+      department: form.department.trim(),
+      notes: form.notes.trim(),
       status: form.status,
       address: form.address,
       photoUrl: form.photoUrl || '',
@@ -95,7 +107,11 @@ export default function StudentForm({ open, onClose, onSubmit, student, classes,
     if (form.roll !== '') payload.roll = Number(form.roll);
     if (form.dateOfBirth) payload.dateOfBirth = form.dateOfBirth;
     if (form.bloodGroup) payload.bloodGroup = form.bloodGroup;
-    if (form.class) payload.class = form.class;
+    if (form.class) {
+      payload.class = form.class;
+      const selectedClass = classes.find((c) => (c.id || c._id) === form.class);
+      if (selectedClass?.academicYear) payload.academicYear = selectedClass.academicYear.id || selectedClass.academicYear._id || selectedClass.academicYear;
+    }
     if (form.section) payload.section = form.section;
     // In add mode, optionally pass login-account details to create alongside.
     const accountInfo = !student && account.create ? { email: account.email, password: account.password } : null;
@@ -158,6 +174,7 @@ export default function StudentForm({ open, onClose, onSubmit, student, classes,
           </Field>
           <Field label={t('students.gender')}>
             <Select value={form.gender} onChange={(e) => setField('gender', e.target.value)}>
+              <option value="">{lang === 'bn' ? 'উল্লেখ নেই' : 'Not provided'}</option>
               <option value="male">{t('gender.male')}</option>
               <option value="female">{t('gender.female')}</option>
               <option value="other">{t('gender.other')}</option>
@@ -222,6 +239,21 @@ export default function StudentForm({ open, onClose, onSubmit, student, classes,
           onChange={(v) => setField('address', v)}
         />
 
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label={lang === 'bn' ? 'যোগাযোগের মোবাইল' : 'Contact mobile'}>
+            <TextInput type="tel" maxLength={50} value={form.contactPhone} onChange={(e) => setField('contactPhone', e.target.value)} />
+          </Field>
+          <Field label={lang === 'bn' ? 'জন্ম নিবন্ধন নম্বর' : 'Birth registration number'}>
+            <TextInput maxLength={50} value={form.birthRegistrationNo} onChange={(e) => setField('birthRegistrationNo', e.target.value)} />
+          </Field>
+          <Field label={lang === 'bn' ? 'বিভাগ' : 'Department'}>
+            <TextInput maxLength={200} value={form.department} onChange={(e) => setField('department', e.target.value)} />
+          </Field>
+          <Field label={lang === 'bn' ? 'মন্তব্য' : 'Notes'}>
+            <textarea rows={3} maxLength={5000} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.notes} onChange={(e) => setField('notes', e.target.value)} />
+          </Field>
+        </div>
+
         {/* Guardians */}
         <div className="rounded-xl border border-slate-200 p-4">
           <div className="mb-3 flex items-center justify-between">
@@ -280,6 +312,14 @@ export default function StudentForm({ open, onClose, onSubmit, student, classes,
             ))}
           </div>
         </div>
+
+        {!!student?.enrollments?.length && <div className="overflow-x-auto rounded-xl border border-slate-200 p-4">
+          <h3 className="mb-3 text-sm font-semibold text-slate-700">{lang === 'bn' ? 'শিক্ষাবর্ষ অনুযায়ী ভর্তি' : 'Enrollments by academic year'}</h3>
+          <table className="w-full text-left text-sm">
+            <thead><tr>{[lang === 'bn' ? 'শিক্ষাবর্ষ' : 'Academic year', t('students.class'), t('students.section')].map(label => <th key={label} className="border-b p-2">{label}</th>)}</tr></thead>
+            <tbody>{student.enrollments.map(e => <tr key={e._id || e.id}><td className="border-b p-2">{bt(e.academicYear?.name, lang)}</td><td className="border-b p-2">{bt(e.class?.name, lang)}</td><td className="border-b p-2">{bt(e.section?.name, lang) || '—'}</td></tr>)}</tbody>
+          </table>
+        </div>}
 
         {/* Login account: create alongside on add; manage on edit. */}
         {!student ? (

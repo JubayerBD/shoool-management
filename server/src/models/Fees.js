@@ -36,12 +36,18 @@ const invoiceItemSchema = new Schema(
 const invoiceSchema = new Schema(
   {
     invoiceNo: { type: String, required: true, unique: true, trim: true, index: true },
+    voidedAt: Date,
+    voidedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    voidReason: String,
     generationKey: { type: String },
     billingSchedule: { type: Schema.Types.ObjectId, ref: 'BillingSchedule', index: true },
     billingDate: { type: String },
     student: { type: Schema.Types.ObjectId, ref: 'Student', required: true, index: true },
     academicYear: { type: Schema.Types.ObjectId, ref: 'AcademicYear', index: true },
     items: [invoiceItemSchema],
+    class: { type: Schema.Types.ObjectId, ref: 'Class', index: true },
+    historicalImport: { type: Boolean, default: false },
+    importNote: { type: String, trim: true, default: '' },
     // Period this invoice covers, e.g. month label. Bilingual for display.
     period: { type: bilingual() },
     totalAmount: { type: Number, required: true, min: 0 },
@@ -72,6 +78,11 @@ const paymentSchema = new Schema(
     invoice: { type: Schema.Types.ObjectId, ref: 'Invoice', required: true, index: true },
     idempotencyKey: { type: String },
     receiptNo: { type: String, unique: true, sparse: true },
+    invoiceNo: { type: String, trim: true, maxlength: 100 }, // Physical receipt-book number for this collection.
+    voidedAt: Date,
+    voidedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    voidReason: String,
+    voidedAmount: Number,
     refundedAmount: { type: Number, default: 0, min: 0 },
     originalAmount: { type: Number, min: 0 },
     corrections: [{ _id: false, previousAmount: Number, correctedAmount: Number, reason: String,
@@ -80,11 +91,14 @@ const paymentSchema = new Schema(
     amount: { type: Number, required: true, min: 0 },
     method: {
       type: String,
-      enum: ['cash', 'bkash', 'nagad', 'rocket', 'card', 'bank'],
+      enum: ['cash', 'bkash', 'nagad', 'rocket', 'card', 'bank', 'unknown'],
       default: 'cash',
     },
     transactionRef: { type: String, trim: true, default: '' },
     paidAt: { type: Date, default: Date.now },
+    historicalImport: { type: Boolean, default: false },
+    feePeriod: { type: String, trim: true, default: '' },
+    importedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     receivedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     note: { type: String, trim: true, default: '' },
   },
@@ -93,5 +107,6 @@ const paymentSchema = new Schema(
 
 export const FeeStructure = mongoose.model('FeeStructure', feeStructureSchema);
 paymentSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
+paymentSchema.index({ invoiceNo: 1 }, { unique: true, partialFilterExpression: { invoiceNo: { $type: 'string' } } });
 export const Invoice = mongoose.model('Invoice', invoiceSchema);
 export const Payment = mongoose.model('Payment', paymentSchema);

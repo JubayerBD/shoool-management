@@ -7,7 +7,7 @@ import { t as bt } from '../../utils/bilingual.js';
 
 const emptyItem = () => ({ title: { en: '', bn: '' }, amount: '' });
 
-export default function InvoiceForm({ open, onClose, onSubmit, saving, studentId }) {
+export default function InvoiceForm({ open, onClose, onSubmit, saving, studentId, initialPeriod = '' }) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
 
@@ -22,11 +22,11 @@ export default function InvoiceForm({ open, onClose, onSubmit, saving, studentId
 
   useEffect(() => {
     if (!open) return;
-    setForm({ student: studentId || '', period: { en: '', bn: '' }, dueDate: '', items: [emptyItem()] });
+    setForm({ student: studentId || '', period: { en: initialPeriod, bn: '' }, dueDate: '', items: [emptyItem()] });
     getAll('/people/students', { params: { limit: 200 } }).then((r) => setStudents(r.data.items));
     getAll('/fees/structures', { params: { limit: 200, isActive: true } })
       .then((r) => setStructures(r.data.items));
-  }, [open, studentId]);
+  }, [open, studentId, initialPeriod]);
 
   const setItem = (idx, patch) =>
     setForm((f) => ({
@@ -91,13 +91,14 @@ export default function InvoiceForm({ open, onClose, onSubmit, saving, studentId
             disabled={saving}
             className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
           >
-            {saving ? t('common.saving') : t('common.save')}
+            {saving ? t('common.saving') : studentId ? (lang === 'bn' ? 'ইনভয়েস তৈরি করে পেমেন্টে যান' : 'Create invoice & continue to payment') : t('common.save')}
           </button>
         </>
       }
     >
       <form id="invoice-form" onSubmit={submit} className="space-y-5">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">{lang === 'bn' ? 'এখানে সম্পূর্ণ ধার্য ফি লিখুন, জমা দেওয়া টাকা নয়। যেমন: ফি ১,০০০ টাকা হলে এখানে ১,০০০ লিখুন। পরের ধাপে জমা ৮০০ লিখলে বাকি ২০০ টাকা বকেয়া থাকবে।' : 'Enter the full fee charged here, not the amount received. For a ৳1,000 fee, keep the invoice at ৳1,000. On the next screen, record a payment of ৳800 to leave ৳200 due.'}</div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label={t('fees.student')} required>
             <Select
               disabled={!!studentId} value={form.student}
@@ -177,6 +178,7 @@ export default function InvoiceForm({ open, onClose, onSubmit, saving, studentId
                 <div className="sm:col-span-3">
                   <div className="flex gap-1">
                     <TextInput
+                      aria-label={lang === 'bn' ? 'সম্পূর্ণ ধার্য ফি' : 'Full fee charged'}
                       type="number"
                       min="0"
                       value={it.amount}
@@ -200,7 +202,7 @@ export default function InvoiceForm({ open, onClose, onSubmit, saving, studentId
           </div>
 
           <div className="mt-4 border-t border-slate-200 pt-3 text-right text-sm">
-            <span className="text-slate-500">{t('fees.total')}: </span>
+            <span className="text-slate-500">{lang === 'bn' ? 'সম্পূর্ণ ধার্য ফি' : 'Full fee charged'}: </span>
             <span className="text-lg font-bold text-slate-800">
               {t('common.taka')}
               {total.toLocaleString()}

@@ -26,7 +26,7 @@ export async function createInvoice(body, session) {
   const discountAmount = body.discountAmount || 0;
   if (discountAmount < 0 || discountAmount > grossAmount) throw ApiError.badRequest('Invalid invoice concession');
   const totalAmount = Math.round((grossAmount - discountAmount) * 100) / 100;
-  const invoice = new Invoice({ ...body, invoiceNo: await nextInvoiceNo(), grossAmount, discountAmount, totalAmount, paidAmount: 0,
+  const invoice = new Invoice({ ...body, invoiceNo: body.invoiceNo?.trim() || await nextInvoiceNo(), grossAmount, discountAmount, totalAmount, paidAmount: 0,
     status: totalAmount === 0 ? 'paid' : 'unpaid' });
   return invoice.save({ session });
 }

@@ -85,7 +85,7 @@ export default function ResourceForm({
         payload[f.key] = val || ''; // always send so clearing persists
       } else if (f.type === 'bilingual') {
         payload[f.key] = val;
-      } else if (val !== '' && val !== undefined) {
+      } else if ((val !== '' || f.allowEmpty) && val !== undefined) {
         payload[f.key] = val;
       }
     }
@@ -218,6 +218,8 @@ export default function ResourceForm({
           onChange={(e) => setField(f.key, e.target.value)}
         />
       );
+    } else if (f.type === 'textarea') {
+      control = <textarea rows={3} maxLength={f.maxLength} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form[f.key] ?? ''} onChange={(e) => setField(f.key, e.target.value)} />;
     } else if (f.type === 'select') {
       control = (
         <Select value={form[f.key] ?? ''} onChange={(e) => setField(f.key, e.target.value)}>

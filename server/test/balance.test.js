@@ -50,6 +50,42 @@ async function allocation() {
   return { a, b, distribution, body: { distribution: distribution.id, partner: a.id, date: schoolDate(), amount: 20, method: 'bank', reference: 'BANK-123', requestKey: randomUUID() } };
 }
 
+test('historical salary months and separately dated allowances count once in expenses and cash balance', async () => {
+  const {Teacher,SalaryPayment,Expense,FinanceCategory}=models;
+  const teacher=await Teacher.create({employeeId:'PAYROLL-QA',name:{en:'Payroll QA'}});
+  const category=await FinanceCategory.create({type:'expense',name:{en:'Teacher coaching allowances'}});
+  const paidAt=parseDay('2026-07-05');
+  const salary=await SalaryPayment.create({staff:teacher.id,month:'2026-06',basic:3000,allowances:4000,deductions:0,net:7000,paidAt,
+    method:'unknown',historicalImport:true,importKey:'qa-teacher-payroll-2026-06',recordedBy:admin.id});
+  await assert.rejects(SalaryPayment.create({staff:teacher.id,month:'2026-06',net:7000,paidAt}),e=>e.code===11000);
+  await assert.rejects(SalaryPayment.create({staff:teacher.id,month:'2026-07',net:7000,paidAt,importKey:salary.importKey}),e=>e.code===11000);
+  await Expense.create({staff:teacher.id,category:category.id,payee:'Payroll QA',amount:6100,date:paidAt,method:'unknown',historicalImport:true,
+    coveredPeriod:'2026-04 / 2026-05',generationKey:'qa-coaching-2026-apr-may'});
+  const balance=await request('/finance/balance');assert.equal(balance.currentBalance,-13100);
+  const salaries=await request('/finance/salaries?month=2026-06');assert.equal(salaries.total,1);assert.equal(salaries.items[0].method,'unknown');
+  const summary=await request('/finance/summary?from=2026-07-01&to=2026-07-31');
+  assert.equal(summary.summary.expense.salary,7000);assert.equal(summary.summary.expense.general,6100);assert.equal(summary.summary.expense.total,13100);
+  assert.equal((await request('/finance/summary?from=2026-06-01&to=2026-06-30')).summary.expense.total,0,'Salary month is not its payment date');
+});
+
+test('undated historical expenses and capital returns stay separate from dated cash and operating profit', async () => {
+  const {Expense,PartnerCapitalReturn}=models;
+  await assert.rejects(Expense.create({amount:5000,date:null}),/date/);
+  await Expense.create({amount:5000,date:null,historicalImport:true,coveredPeriod:'2026-08',method:'unknown',generationKey:'QA-UNDATED-EXPENSE',internalImportRef:'QA-INTERNAL',reference:''});
+  await PartnerCapitalReturn.create({recipientName:'Former partner',generationKey:'QA-CAPITAL-RETURN-UNDATED',amountCents:100000,coveredPeriod:'2026-09',historicalImport:true,paidAt:null,recordedBy:admin.id});
+  await PartnerCapitalReturn.create({recipientName:'Other former partner',generationKey:'QA-CAPITAL-RETURN-DATED',amountCents:200000,coveredPeriod:'2026-09',paidAt:parseDay('2026-10-05'),reference:'000017',recordedBy:admin.id});
+  const balance=await request('/finance/balance');
+  assert.equal(balance.currentBalance,-2000);
+  assert.equal(balance.undatedExpensePayments,5000);
+  assert.equal(balance.undatedCapitalReturns,1000);
+  assert.equal(balance.returnedCapitalTotal,3000);
+  assert.equal(balance.capitalReturns.length,2);
+  const all=await request('/finance/summary');assert.equal(all.summary.expense.total,5000,'Capital returns must not be operating expenses');
+  const dated=await request('/finance/summary?from=2026-01-01&to=2026-12-31');assert.equal(dated.summary.expense.total,0);
+  const analytics=await request('/finance/analytics');assert.equal(analytics.monthly.find(m=>m.label==='Undated').expense,5000);
+  const expense=await Expense.findOne({generationKey:'QA-UNDATED-EXPENSE'});assert.equal(expense.reference,'');assert.equal(expense.date,null);
+});
+
 test('current balance includes prior funds, capital and paid activity; excludes unpaid invoices, unapproved refunds and future activity', async () => {
   const day = parseDay(schoolDate()), old = parseDay('2010-01-02');
   await models.OpeningBalance.create({ key: 'opening', amountCents: 10000, date: parseDay('2010-01-01'), note: 'Funds held before records', recordedBy: admin.id });

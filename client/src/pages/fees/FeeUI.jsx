@@ -15,9 +15,9 @@ export const buttonClass = 'rounded-lg border border-slate-300 px-3 py-2 text-sm
 export const primaryClass = 'rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50';
 export function Notice({ children }) { return <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-relaxed text-slate-600">{children}</div>; }
 export function ErrorNotice({ error }) { return error ? <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p> : null; }
-export function Summary({ values }) {
+export function Summary({ values, columns = 4 }) {
   const { f, money } = useFeeText();
-  return <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{Object.entries(values).map(([key, value]) => <div key={key} className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm"><div className="text-xs text-slate-500">{f(key)}</div><div className={`mt-1 text-xl font-bold ${['due', 'outstanding', 'overdue'].includes(key) ? 'text-amber-700' : 'text-slate-800'}`}>{['students', 'invoiceCount', 'readyCount'].includes(key) ? value : money(value)}</div></div>)}</div>;
+  return <div className={`grid grid-cols-2 gap-3 ${columns === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>{Object.entries(values).map(([key, value]) => <div key={key} className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm"><div className="text-xs text-slate-500">{f(key)}</div><div className={`mt-1 text-xl font-bold ${['due', 'outstanding', 'overdue'].includes(key) ? 'text-amber-700' : 'text-slate-800'}`}>{['students', 'invoiceCount', 'readyCount'].includes(key) ? value : money(value)}</div></div>)}</div>;
 }
 export function useFeeReferences() {
   const [data, setData] = useState({ types: [], plans: [], classes: [], years: [], students: [] });

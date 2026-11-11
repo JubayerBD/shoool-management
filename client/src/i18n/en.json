@@ -208,6 +208,7 @@
     "recurringNote": "Automatically records future expenses from this date, including missed periods. No bank transfer is made. Disable recurring on the original entry to stop.",
     "frequency": "Frequency",
     "methods": {
+      "unknown": "Not provided",
       "cash": "Cash",
       "bkash": "bKash",
       "nagad": "Nagad",
@@ -325,6 +326,8 @@
     }
   },
   "fees": {
+    "historicalImportHint": "Historical paid amounts only; full charges and dues have not been assessed. Actual collection dates, methods and physical receipt numbers are unknown. This is not an original receipt.",
+    "historicalSummary": "Historical payment summary",
     "autoGenerate": "Automatically generate student invoices",
     "billingStart": "First billing date (past dates generate missed bills)",
     "title": "Fees",
@@ -381,6 +384,7 @@
     "payAmount": "Amount",
     "method": "Method",
     "methods": {
+      "unknown": "Not provided",
       "cash": "Cash",
       "bkash": "bKash",
       "nagad": "Nagad",

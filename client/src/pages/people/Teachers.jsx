@@ -9,7 +9,8 @@ const statusBadge = {
 };
 
 export default function Teachers() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const notProvided = i18n.language?.startsWith('bn') ? 'উল্লেখ নেই' : 'Not provided';
   return (
     <ResourceCrud
       endpoint="/people/teachers"
@@ -32,6 +33,7 @@ export default function Teachers() {
         },
         { key: 'phone', header: t('teachers.phone') },
         { key: 'email', header: t('teachers.email') },
+        { key: 'subjects', header: t('teachers.subjects'), render: (r, lang, localBt) => (r.subjects || []).map(s => localBt(s.name, lang)).filter(Boolean).join(', ') || '—' },
         {
           key: 'status',
           header: t('teachers.status'),
@@ -41,7 +43,7 @@ export default function Teachers() {
                 statusBadge[r.status] || ''
               }`}
             >
-              {t(`status.${r.status}`)}
+              {r.status ? t(`status.${r.status}`) : notProvided}
             </span>
           ),
         },
@@ -60,8 +62,10 @@ export default function Teachers() {
         {
           key: 'gender',
           type: 'select',
+          allowEmpty: true,
           label: t('teachers.gender'),
           options: [
+            { value: '', label: notProvided },
             { value: 'male', label: t('gender.male') },
             { value: 'female', label: t('gender.female') },
             { value: 'other', label: t('gender.other') },
@@ -79,8 +83,10 @@ export default function Teachers() {
         {
           key: 'status',
           type: 'select',
+          allowEmpty: true,
           label: t('teachers.status'),
           options: [
+            { value: '', label: notProvided },
             { value: 'active', label: t('status.active') },
             { value: 'inactive', label: t('status.inactive') },
           ],
@@ -97,6 +103,7 @@ export default function Teachers() {
           labelEn: t('teachers.addressEn'),
           labelBn: t('teachers.addressBn'),
         },
+        { key: 'notes', type: 'textarea', allowEmpty: true, maxLength: 5000, label: i18n.language?.startsWith('bn') ? 'মন্তব্য' : 'Notes' },
       ]}
     />
   );

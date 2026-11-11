@@ -35,12 +35,16 @@ const incomeSchema = new Schema(
 const expenseSchema = new Schema(
   {
     generationKey: { type: String },
+    historicalImport: { type: Boolean, default: false },
+    staff: { type: Schema.Types.ObjectId, ref: 'Teacher', index: true },
+    coveredPeriod: { type: String, trim: true, default: '' },
     recurringSource: { type: Schema.Types.ObjectId, ref: 'Expense' },
     category: { type: Schema.Types.ObjectId, ref: 'FinanceCategory', index: true },
     payee: { type: String, trim: true, default: '' }, // vendor / person paid
     amount: { type: Number, required: true, min: 0 },
-    date: { type: Date, required: true, default: Date.now, index: true },
-    method: { type: String, enum: METHODS, default: 'cash' },
+    date: { type: Date, required() { return !this.historicalImport; }, default: Date.now, index: true },
+    internalImportRef: { type: String, trim: true, default: '' },
+    method: { type: String, enum: [...METHODS, 'unknown'], default: 'cash' },
     reference: { type: String, trim: true, default: '' },
     note: { type: String, trim: true, default: '' },
     receiptUrl: { type: String, trim: true, default: '' },
@@ -68,6 +72,9 @@ const salaryStructureSchema = new Schema(
 /** A monthly salary payment to a staff member (also counts as an expense). */
 const salaryPaymentSchema = new Schema(
   {
+    reference: { type: String, trim: true, maxlength: 200, default: '' },
+    importKey: { type: String, trim: true },
+    historicalImport: { type: Boolean, default: false },
     staff: { type: Schema.Types.ObjectId, ref: 'Teacher', required: true, index: true },
     month: { type: String, required: true }, // "YYYY-MM"
     basic: { type: Number, default: 0, min: 0 },
@@ -75,7 +82,7 @@ const salaryPaymentSchema = new Schema(
     deductions: { type: Number, default: 0, min: 0 },
     net: { type: Number, required: true, min: 0 },
     paidAt: { type: Date, required: true, default: Date.now, index: true },
-    method: { type: String, enum: METHODS, default: 'cash' },
+    method: { type: String, enum: [...METHODS, 'unknown'], default: 'cash' },
     note: { type: String, trim: true, default: '' },
     recordedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },
@@ -84,6 +91,7 @@ const salaryPaymentSchema = new Schema(
 
 // One salary payment per staff per month.
 salaryPaymentSchema.index({ staff: 1, month: 1 }, { name: 'active_salary_month', unique: true, partialFilterExpression: { isReversed: false } });
+salaryPaymentSchema.index({ importKey: 1 }, { unique: true, sparse: true });
 
 for (const schema of [incomeSchema, expenseSchema, salaryPaymentSchema]) schema.add({
   isReversed: { type: Boolean, default: false },

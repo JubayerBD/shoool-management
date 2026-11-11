@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "test": "node --test test/finance.test.js test/security.test.js test/balance.test.js test/activity.test.js test/features.test.js test/financial-controls.test.js",
+    "test": "node --test test/finance.test.js test/security.test.js test/balance.test.js test/activity.test.js test/features.test.js test/financial-controls.test.js test/fee-calendar.test.mjs",
     "test:ui": "node test/fees-ui.mjs",
     "test:ui:finance": "node test/profit-ui.mjs",
     "test:ui:school": "node test/school-ui.mjs",

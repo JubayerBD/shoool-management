@@ -9,7 +9,7 @@ import { paginated } from '../../utils/pagination.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { studentScope, amountDue, money, updateInvoiceStatus } from '../../utils/feeAccess.js';
 import { parseDay, schoolDate } from '../../utils/financeDates.js';
-import { planDetails, previewSchedule, generateScheduleInvoices } from '../../services/feeSchedules.js';
+import { planDetails, previewSchedule, generateScheduleInvoices, upcomingBillsForStudent } from '../../services/feeSchedules.js';
 import { withBillingTransaction } from '../../services/billing.js';
 
 const router = Router();
@@ -153,43 +153,52 @@ router.get('/accounts/:student', requireAuth, async (req, res) => {
   const scope = studentScope(req.user, req.params.student);
   const student = await Student.findById(req.params.student).populate('class', 'name').populate('section', 'name');
   if (!student) throw ApiError.notFound('Student not found');
-  const [invoices, payments, adjustments] = await Promise.all([
-    Invoice.find(scope).sort({ createdAt: 1 }), Payment.find(scope).sort({ paidAt: 1 }).populate('receivedBy', 'name'),
+  const [invoices, payments, adjustments, upcomingBills] = await Promise.all([
+    Invoice.find(scope).populate('class', 'name').sort({ createdAt: 1 }), Payment.find(scope).sort({ paidAt: 1 }).populate('receivedBy', 'name'),
     FeeAdjustment.find({ ...scope, status: 'approved' }).sort({ reviewedAt: 1 }),
+    upcomingBillsForStudent(student),
   ]);
   const totals = { billed: 0, discounts: 0, waived: 0, collected: 0, refunded: 0, due: 0 };
   const ledger = [];
+  const voidedInvoices = new Set(invoices.filter(bill => bill.voidedAt).map(bill => bill.id));
   for (const bill of invoices) {
+    if (bill.voidedAt) continue;
     totals.billed += bill.grossAmount ?? bill.totalAmount;
     totals.discounts += bill.discountAmount || 0;
     totals.waived += bill.waivedAmount || 0;
     totals.due += amountDue(bill);
-    ledger.push({ id: bill.id, date: bill.createdAt, type: 'invoice', reference: bill.invoiceNo,
+    ledger.push({ id: bill.id, date: bill.historicalImport ? null : bill.createdAt, importPairKey: bill.historicalImport ? bill.generationKey : '', type: 'invoice', reference: bill.invoiceNo,
       debit: bill.grossAmount ?? bill.totalAmount, credit: 0 });
     if (bill.discountAmount) ledger.push({ id: `${bill.id}-discount`, date: bill.createdAt, type: 'concession',
       reference: bill.concessionReason, debit: 0, credit: bill.discountAmount });
   }
   for (const payment of payments) {
+    if (payment.voidedAt) continue;
     totals.collected += payment.amount;
-    ledger.push({ id: payment.id, date: payment.paidAt, type: 'payment', reference: payment.receiptNo || `REC-${payment.id}`,
+    ledger.push({ id: payment.id, date: payment.paidAt, importPairKey: payment.historicalImport ? payment.idempotencyKey : '', type: 'payment', reference: payment.receiptNo || `REC-${payment.id}`,
       debit: 0, credit: payment.amount });
   }
   for (const entry of adjustments) {
+    if (voidedInvoices.has(String(entry.invoice))) continue;
     if (entry.type === 'refund') totals.refunded += entry.amount;
     ledger.push({ id: entry.id, date: entry.reviewedAt, type: entry.type, reference: entry.reason,
       debit: entry.type === 'refund' ? entry.amount : 0, credit: ['refund', 'payment_correction'].includes(entry.type) ? 0 : entry.amount });
   }
-  ledger.sort((a, b) => +new Date(a.date) - +new Date(b.date) || a.id.localeCompare(b.id));
+  ledger.sort((a, b) => +new Date(a.date) - +new Date(b.date) ||
+    (a.importPairKey && b.importPairKey ? a.importPairKey.localeCompare(b.importPairKey) || b.debit - a.debit : a.id.localeCompare(b.id)));
   let balance = 0;
   for (const entry of ledger) { balance = money(balance + entry.debit - entry.credit); entry.balance = balance; }
   for (const key of Object.keys(totals)) totals[key] = money(totals[key]);
-  res.json({ student, invoices, payments, adjustments, totals, ledger });
+  res.json({ student, invoices, payments, adjustments, totals, ledger, upcomingBills });
 });
 
 router.get('/dues-report', ...managers, async (req, res) => {
   const filter = { status: { $ne: 'cancelled' } };
   if (req.query.academicYear) filter.academicYear = req.query.academicYear;
-  if (req.query.class) filter.student = { $in: await Student.find({ class: req.query.class }).distinct('_id') };
+  if (req.query.class) filter.$or = [
+    { class: req.query.class },
+    { class: null, student: { $in: await Student.find({ class: req.query.class }).distinct('_id') } },
+  ];
   const invoices = await Invoice.find(filter).populate('student', 'name admissionNo class');
   const todayEnd = parseDay(schoolDate(), true);
   const totals = { billed: 0, discounts: 0, waived: 0, paid: 0, due: 0, overdue: 0 };
@@ -206,7 +215,7 @@ router.get('/dues-report', ...managers, async (req, res) => {
   res.json({ totals, items: [...rows.values()], asOf: schoolDate(todayEnd) });
 });
 
-const adjustmentSchema = z.object({ invoice: id, payment: id.optional(), type: z.enum(['waiver', 'cancellation', 'refund', 'payment_correction']),
+const adjustmentSchema = z.object({ invoice: id, payment: id.optional(), type: z.enum(['waiver', 'cancellation', 'refund', 'payment_correction', 'void']),
   amount: currency, reason: z.string().trim().min(3) });
 router.get('/adjustments', ...managers, async (req, res) => {
   const filter = req.query.status ? { status: req.query.status } : {};
@@ -218,7 +227,8 @@ router.post('/adjustments', ...managers, validate(adjustmentSchema), async (req,
   const invoice = await Invoice.findById(req.body.invoice);
   if (!invoice) throw ApiError.notFound('Invoice not found');
   if (invoice.status === 'cancelled') throw ApiError.badRequest('Invoice is already cancelled');
-  if (!['cancellation', 'payment_correction'].includes(req.body.type) && req.body.amount <= 0) throw ApiError.badRequest('Enter an amount greater than zero');
+  if (!['cancellation', 'payment_correction', 'void'].includes(req.body.type) && req.body.amount <= 0) throw ApiError.badRequest('Enter an amount greater than zero');
+  if (req.body.type === 'void' && await Payment.exists({ invoice: invoice.id, refundedAmount: { $gt: 0 } })) throw ApiError.badRequest('This invoice has actual refunds and cannot be voided');
   let previousAmount;
   if (req.body.type === 'payment_correction') {
     const payment = await Payment.findOne({ _id: req.body.payment, invoice: invoice.id });
@@ -235,7 +245,7 @@ router.post('/adjustments', ...managers, validate(adjustmentSchema), async (req,
     if (!payment || req.body.amount > money(payment.amount - (payment.refundedAmount || 0))) throw ApiError.badRequest('Select a payment with enough refundable balance');
   }
   const item = await FeeAdjustment.create({ ...req.body, amount: req.body.type === 'cancellation' ? amountDue(invoice) : req.body.amount,
-    previousAmount, student: invoice.student, requestedBy: req.user._id });
+    previousAmount, ...(req.body.type === 'void' ? { amount: invoice.paidAmount, invoiceUpdatedAt: invoice.updatedAt } : {}), student: invoice.student, requestedBy: req.user._id });
   res.status(201).json({ item });
 });
 router.post('/adjustments/:id/review', ...admins,
@@ -246,7 +256,25 @@ router.post('/adjustments/:id/review', ...admins,
     if (req.body.decision === 'approved') {
       const invoice = await Invoice.findById(entry.invoice).session(session);
       if (!invoice || invoice.status === 'cancelled') throw ApiError.conflict('Invoice is unavailable or already cancelled');
-      if (entry.type === 'payment_correction') {
+      if (entry.type === 'void') {
+        if (!entry.invoiceUpdatedAt || +invoice.updatedAt !== +entry.invoiceUpdatedAt) throw ApiError.conflict('Invoice changed after the void request. Reject this request and submit a new one.');
+        const payments = await Payment.find({ invoice: invoice.id }).session(session);
+        if (payments.some(payment => payment.refundedAmount > 0)) throw ApiError.conflict('This invoice has actual refunds and cannot be voided');
+        const voidedAt = new Date();
+        for (const payment of payments) {
+          payment.voidedAmount = payment.amount;
+          payment.amount = 0;
+          payment.voidedAt = voidedAt;
+          payment.voidedBy = req.user._id;
+          payment.voidReason = entry.reason;
+          await payment.save({ session });
+        }
+        invoice.paidAmount = 0;
+        invoice.status = 'cancelled';
+        invoice.voidedAt = voidedAt;
+        invoice.voidedBy = req.user._id;
+        invoice.voidReason = entry.reason;
+      } else if (entry.type === 'payment_correction') {
         const payment = await Payment.findOne({ _id: entry.payment, invoice: invoice.id }).session(session);
         if (!payment || payment.amount !== entry.previousAmount) throw ApiError.conflict('Payment changed. Submit a new correction request.');
         const delta = money(entry.amount - payment.amount);

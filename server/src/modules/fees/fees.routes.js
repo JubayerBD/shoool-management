@@ -87,7 +87,7 @@ router.get('/invoices', requireAuth, async (req, res) => {
 });
 
 router.get('/invoices/:id', requireAuth, async (req, res) => {
-  const item = await Invoice.findOne({ _id: req.params.id, ...studentScope(req.user) }).populate({ path: 'student', select: 'name admissionNo roll class section', populate: [{ path: 'class', select: 'name' }, { path: 'section', select: 'name' }] });
+  const item = await Invoice.findOne({ _id: req.params.id, ...studentScope(req.user) }).populate('class', 'name').populate({ path: 'student', select: 'name admissionNo roll class section', populate: [{ path: 'class', select: 'name' }, { path: 'section', select: 'name' }] });
   if (!item) throw ApiError.notFound('Invoice not found');
   const payments = await Payment.find({ invoice: item.id }).sort({ paidAt: -1 }).populate('receivedBy', 'name');
   res.json({ item, payments });
@@ -95,6 +95,7 @@ router.get('/invoices/:id', requireAuth, async (req, res) => {
 
 /* ---- Payments ---- */
 const paymentSchema = z.object({
+  invoiceNo: z.string().trim().min(1, 'Invoice No is required').max(100),
   invoice: z.string().min(1),
   amount: z.number().finite().min(0.01).multipleOf(0.01),
   idempotencyKey: z.string().uuid().optional(),
@@ -115,7 +116,7 @@ router.post(
         if (session) query = query.session(session);
         const existing = await query;
         if (existing) {
-          if (String(existing.invoice) !== req.body.invoice || (existing.originalAmount ?? existing.amount) !== req.body.amount || existing.method !== req.body.method) {
+          if (String(existing.invoice) !== req.body.invoice || (existing.originalAmount ?? existing.amount) !== req.body.amount || existing.method !== req.body.method || existing.invoiceNo !== req.body.invoiceNo) {
             throw ApiError.conflict('Payment request key was already used for a different payment');
           }
           const invoiceQuery = Invoice.findById(existing.invoice);

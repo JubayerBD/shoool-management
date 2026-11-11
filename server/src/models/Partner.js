@@ -3,7 +3,7 @@ import { baseSchemaOptions } from './common.js';
 
 const partnerSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 200 },
-  phone: { type: String, required: true, trim: true, maxlength: 50 },
+  phone: { type: String, trim: true, default: '', maxlength: 50 },
   address: { type: String, required: true, trim: true, maxlength: 1000 },
   email: { type: String, trim: true, default: '', maxlength: 254 },
 }, baseSchemaOptions);
@@ -12,6 +12,7 @@ const depositSchema = new mongoose.Schema({
   partner: { type: mongoose.Schema.Types.ObjectId, ref: 'Partner', required: true, index: true },
   amountCents: { type: Number, required: true, min: 1, validate: Number.isSafeInteger },
   date: { type: Date, required: true },
+  invoiceNo: { type: String, trim: true, maxlength: 200, default: '' },
   note: { type: String, trim: true, maxlength: 1000, default: '' },
   requestKey: { type: String, required: true, unique: true },
   recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

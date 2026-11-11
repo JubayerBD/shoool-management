@@ -25,10 +25,15 @@ export default function Students() {
   const canManage = user.role === 'admin';
 
   const [rows, setRows] = useState([]);
-  const [meta, setMeta] = useState({ page: 1, pages: 1 });
+  const [meta, setMeta] = useState({ page: 1, pages: 1, total: null });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('');
+  const [yearFilter, setYearFilter] = useState('');
+  const enrollmentNames = (row, field) => [...new Set((row.enrollments || [])
+    .filter((e) => !yearFilter || (e.academicYear?.id || e.academicYear?._id) === yearFilter)
+    .map((e) => bt(e[field]?.name, lang)).filter(Boolean))].join(' / ');
+  const [academicYears, setAcademicYears] = useState([]);
   const [page, setPage] = useState(1);
 
   const [classes, setClasses] = useState([]);
@@ -44,6 +49,7 @@ export default function Students() {
   useEffect(() => {
     api.get('/academics/classes', { params: { limit: 200 } }).then((r) => setClasses(r.data.items));
     api.get('/academics/sections', { params: { limit: 500 } }).then((r) => setSections(r.data.items));
+    api.get('/academics/academic-years', { params: { limit: 200 } }).then((r) => setAcademicYears(r.data.items));
   }, []);
 
   const loadStudents = useCallback(async () => {
@@ -52,15 +58,17 @@ export default function Students() {
       const params = { page, limit: 25 };
       if (search) params.search = search;
       if (classFilter) params.class = classFilter;
+      if (yearFilter) params.academicYear = yearFilter;
       const res = await api.get('/people/students', { params });
       setRows(res.data.items);
-      setMeta({ page: res.data.page, pages: res.data.pages });
+      setMeta({ page: res.data.page, pages: res.data.pages, total: res.data.total });
     } catch {
       setRows([]);
+      setMeta({ page: 1, pages: 1, total: null });
     } finally {
       setLoading(false);
     }
-  }, [page, search, classFilter]);
+  }, [page, search, classFilter, yearFilter]);
 
   useEffect(() => {
     const id = setTimeout(loadStudents, search ? 300 : 0); // debounce search
@@ -137,9 +145,10 @@ export default function Students() {
     { key: 'roll', header: t('students.roll'), className: 'w-16' },
     { key: 'admissionNo', header: t('students.admissionNo') },
     { key: 'name', header: t('students.nameEn'), render: (r) => bt(r.name, lang) },
-    { key: 'class', header: t('students.class'), render: (r) => bt(r.class?.name, lang) || '—' },
+    { key: 'class', header: t('students.class'), render: (r) => enrollmentNames(r, 'class') || bt(r.class?.name, lang) || '—' },
     { key: 'section', header: t('students.section'), render: (r) => bt(r.section?.name, lang) || '—' },
-    { key: 'gender', header: t('students.gender'), render: (r) => t(`gender.${r.gender}`) },
+    { key: 'academicYear', header: lang === 'bn' ? 'শিক্ষাবর্ষ' : 'Academic year', render: (r) => enrollmentNames(r, 'academicYear') || bt(r.academicYear?.name, lang) || '—' },
+    { key: 'gender', header: t('students.gender'), render: (r) => r.gender ? t(`gender.${r.gender}`) : '—' },
     {
       key: 'status',
       header: t('students.status'),
@@ -223,12 +232,24 @@ export default function Students() {
             }}
           >
             <option value="">{t('common.all')} — {t('students.class')}</option>
-            {classes.map((c) => (
+            {classes.filter((c) => !yearFilter || (c.academicYear?.id || c.academicYear?._id || c.academicYear) === yearFilter).map((c) => (
               <option key={c.id || c._id} value={c.id || c._id}>
                 {bt(c.name, lang)}
               </option>
             ))}
           </Select>
+        </div>
+        <div className="w-48">
+          <Select value={yearFilter} aria-label={lang === 'bn' ? 'শিক্ষাবর্ষ' : 'Academic year'} onChange={(e) => { setPage(1); setYearFilter(e.target.value); setClassFilter(''); }}>
+            <option value="">{lang === 'bn' ? 'সকল শিক্ষাবর্ষ' : 'All academic years'}</option>
+            {academicYears.map((year) => <option key={year.id || year._id} value={year.id || year._id}>{bt(year.name, lang)}</option>)}
+          </Select>
+        </div>
+        <div role="status" aria-live="polite" className="flex items-center gap-2 rounded-lg border border-brand-100 bg-brand-50 px-4 py-2 text-sm text-brand-800 sm:ml-auto">
+          <span>{search || classFilter || yearFilter
+            ? (lang === 'bn' ? 'মিলেছে এমন শিক্ষার্থী' : 'Matching students')
+            : (lang === 'bn' ? 'মোট শিক্ষার্থী' : 'Total students')}:</span>
+          <strong className="text-lg tabular-nums">{loading ? '…' : meta.total === null ? '—' : meta.total.toLocaleString(lang === 'bn' ? 'bn-BD' : 'en-BD')}</strong>
         </div>
       </div>
 

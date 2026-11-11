@@ -60,7 +60,8 @@ const adjustment = new Schema({
   invoice: { type: Schema.Types.ObjectId, ref: 'Invoice', required: true, index: true },
   student: { type: Schema.Types.ObjectId, ref: 'Student', required: true, index: true },
   payment: { type: Schema.Types.ObjectId, ref: 'Payment' },
-  type: { type: String, enum: ['waiver', 'cancellation', 'refund', 'payment_correction'], required: true },
+  type: { type: String, enum: ['waiver', 'cancellation', 'refund', 'payment_correction', 'void'], required: true },
+  invoiceUpdatedAt: Date,
   previousAmount: Number,
   amount: { type: Number, required: true, min: 0 },
   reason: { type: String, required: true, trim: true },
@@ -72,5 +73,6 @@ const adjustment = new Schema({
 }, baseSchemaOptions);
 
 export const FeePlan = mongoose.model('FeePlan', feePlan);
+adjustment.index({ invoice: 1, type: 1, status: 1 }, { unique: true, partialFilterExpression: { type: 'void', status: 'pending' } });
 export const BillingSchedule = mongoose.model('BillingSchedule', schedule);
 export const FeeAdjustment = mongoose.model('FeeAdjustment', adjustment);

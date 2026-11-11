@@ -3,7 +3,7 @@ import { Payment } from '../models/Fees.js';
 import { FeeAdjustment } from '../models/FeeWorkflow.js';
 import { PartnerDeposit } from '../models/Partner.js';
 import { ProfitDistribution } from '../models/ProfitDistribution.js';
-import { OpeningBalance, ProfitPayment } from '../models/CashBalance.js';
+import { OpeningBalance, ProfitPayment, PartnerCapitalReturn } from '../models/CashBalance.js';
 import { schoolDate, parseDay } from '../utils/financeDates.js';
 import { ApiError } from '../utils/ApiError.js';
 import { correctionEvents } from './financialOperations.js';
@@ -28,18 +28,26 @@ export async function cashBalance(session) {
   const opening = await OpeningBalance.findOne({ key: 'opening' }).session(session).lean();
   if (opening && opening.date <= cutoff) add(opening, 'opening', opening.amountCents);
   const fees = await Payment.find({ paidAt: { $lte: cutoff } }).populate('student', 'name').session(session).lean();
+  const undated = await Payment.find({ historicalImport: true, paidAt: null }).select('amount').session(session).lean();
+  const undatedFeeCollections = undated.reduce((sum, row) => checkedSum(sum, checkedCents(row.amount)), 0) / 100;
   for (const r of fees) add(r, 'fees', checkedCents(r.amount), r.student?.name);
   const income = await Income.find({ date: { $lte: cutoff } }).session(session).lean();
   for (const r of income) add(r, 'income', checkedCents(r.amount), r.source);
   const capital = await PartnerDeposit.find({ date: { $lte: cutoff } }).populate('partner', 'name').session(session).lean();
   for (const r of capital) add(r, 'capital', r.amountCents, r.partner?.name);
   const expense = await Expense.find({ date: { $lte: cutoff } }).session(session).lean();
+  const undatedExpenses = await Expense.find({ historicalImport: true, date: null, isReversed: { $ne: true } }).select('amount').session(session).lean();
+  const undatedExpensePayments = undatedExpenses.reduce((sum, row) => checkedSum(sum, checkedCents(row.amount)), 0) / 100;
   for (const r of expense) add(r, 'expense', -checkedCents(r.amount), r.payee);
   const salaries = await SalaryPayment.find({ paidAt: { $lte: cutoff } }).populate('staff', 'name').session(session).lean();
   for (const r of salaries) add(r, 'salary', -checkedCents(r.net), r.staff?.name);
   const refunds = await FeeAdjustment.find({ status: 'approved', type: 'refund', reviewedAt: { $lte: cutoff } }).populate('student', 'name').session(session).lean();
   for (const r of refunds) add(r, 'refund', -checkedCents(r.amount), r.student?.name);
   const payments = await ProfitPayment.find({ date: { $lte: cutoff } }).populate('partner', 'name').session(session).lean();
+  const capitalReturns = await PartnerCapitalReturn.find({ $or: [{ paidAt: null }, { paidAt: { $lte: cutoff } }] }).sort({ coveredPeriod: 1, recipientName: 1 }).session(session).lean();
+  const returnedCapitalTotal = capitalReturns.reduce((sum, row) => checkedSum(sum, row.amountCents), 0) / 100;
+  const undatedCapitalReturns = capitalReturns.filter(row => !row.paidAt).reduce((sum, row) => checkedSum(sum, row.amountCents), 0) / 100;
+  for (const row of capitalReturns.filter(row => row.paidAt)) add(row, 'capital-return', -row.amountCents, row.recipientName);
   for (const r of payments) add(r, 'profit-payment', -r.amountCents, r.partner?.name);
   const corrections = await correctionEvents({ effectiveAt: { $lte: cutoff } }, session);
   for (const r of corrections) add({ _id: r.id, date: r.date, createdAt: r.date, note: r.reason, reference: r.reference }, 'correction', r.cashCents, r.party);
@@ -70,6 +78,10 @@ export async function cashBalance(session) {
       recordedDate: schoolDate(d.createdAt), allocated: allocated / 100, paid: paid / 100, unpaid: (allocated - paid) / 100 });
   }
   return { asOf: today, currentBalance: balance / 100, unpaidProfit: unpaidCents / 100, balanceAfterUnpaidProfit: checkedSum(balance, -unpaidCents) / 100,
+    undatedFeeCollections,
+    undatedExpensePayments,
+    returnedCapitalTotal, undatedCapitalReturns,
+    capitalReturns: capitalReturns.map(({ amountCents, ...r }) => ({ ...r, id: String(r._id), amount: amountCents / 100 })),
     opening: opening ? { ...opening, id: String(opening._id), amount: opening.amountCents / 100 } : null,
     totals: Object.fromEntries(Object.entries(totals).map(([key, amount]) => [key, amount / 100])), allocations, events };
 }

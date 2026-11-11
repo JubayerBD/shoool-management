@@ -14,7 +14,7 @@ function profile(body) {
   const result = {};
   for (const [key, limit] of Object.entries({ name: 200, phone: 50, address: 1000, email: 254 })) {
     const value = body[key] ?? '';
-    if (typeof value !== 'string' || value.trim().length > limit || (key !== 'email' && !value.trim())) throw ApiError.badRequest(`Invalid ${key}`);
+    if (typeof value !== 'string' || value.trim().length > limit || (['name', 'address'].includes(key) && !value.trim())) throw ApiError.badRequest(`Invalid ${key}`);
     result[key] = value.trim();
   }
   if (result.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result.email)) throw ApiError.badRequest('Invalid email');
@@ -30,7 +30,10 @@ router.get('/', async (req, res) => {
   const [partners, totals] = await Promise.all([Partner.find().sort({ name: 1, _id: 1 }), PartnerDeposit.aggregate([{ $group: { _id: '$partner', total: { $sum: '$amountCents' } } }])]);
   const capital = new Map(totals.map((p) => [String(p._id), p.total]));
   for (const reversal of await correctionEvents({ targetType: 'partnerDeposit' })) capital.set(String(reversal.partner), (capital.get(String(reversal.partner)) || 0) - reversal.amountCents);
-  res.json(capitalShares(partners.map((p) => ({ ...p.toJSON(), capitalCents: capital.get(p.id) || 0 })), profit));
+  const rankedPartners = partners
+    .map((p) => ({ ...p.toJSON(), capitalCents: capital.get(p.id) || 0 }))
+    .sort((a, b) => b.capitalCents - a.capitalCents);
+  res.json(capitalShares(rankedPartners, profit));
 });
 router.post('/', async (req, res) => res.status(201).json({ item: await Partner.create(profile(req.body)) }));
 router.get('/:id', async (req, res) => {
@@ -57,16 +60,17 @@ router.post('/:id/deposits', async (req, res) => {
   const amountCents = moneyCents(req.body.amount);
   const date = parseDay(req.body.date);
   if (req.body.date > schoolDate()) throw ApiError.badRequest('Deposit date cannot be in the future');
-  const { note = '', requestKey } = req.body;
+  const { note = '', requestKey, invoiceNo } = req.body;
+  if (typeof invoiceNo !== 'string' || !invoiceNo.trim() || invoiceNo.trim().length > 200) throw ApiError.badRequest('Invoice No. is required and must be at most 200 characters');
   if (typeof note !== 'string' || note.length > 1000) throw ApiError.badRequest('Note must be at most 1000 characters');
   if (typeof requestKey !== 'string' || !/^[a-zA-Z0-9-]{16,100}$/.test(requestKey)) throw ApiError.badRequest('A valid request key is required');
   let deposit;
   try {
-    deposit = await PartnerDeposit.create({ partner: item._id, amountCents, date, note: note.trim(), requestKey, recordedBy: req.user._id });
+    deposit = await PartnerDeposit.create({ partner: item._id, amountCents, date, invoiceNo: invoiceNo.trim(), note: note.trim(), requestKey, recordedBy: req.user._id });
   } catch (err) {
     if (err.code !== 11000) throw err;
     deposit = await PartnerDeposit.findOne({ requestKey });
-    if (!deposit || String(deposit.partner) !== item.id || deposit.amountCents !== amountCents || +deposit.date !== +date || deposit.note !== note.trim()) throw ApiError.conflict('Request key already used for a different deposit');
+    if (!deposit || String(deposit.partner) !== item.id || deposit.amountCents !== amountCents || +deposit.date !== +date || deposit.invoiceNo !== invoiceNo.trim() || deposit.note !== note.trim()) throw ApiError.conflict('Request key already used for a different deposit');
   }
   res.status(201).json({ item: { ...deposit.toJSON(), amount: deposit.amountCents / 100 } });
 });

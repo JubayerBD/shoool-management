@@ -8,7 +8,7 @@ import { useToast } from '../../components/ui/Toast.jsx';
 import { t as bt } from '../../utils/bilingual.js';
 import PaymentReceipt from './PaymentReceipt.jsx';
 import { due, useFeeText } from './FeeUI.jsx';
-import PrintDocument, { DocFields, DocItems, DocWords, useDocText } from '../../components/print/PrintDocument.jsx';
+import PrintDocument, { DocFields, DocItems, DocNote, DocWords, useDocText } from '../../components/print/PrintDocument.jsx';
 
 const METHODS = ['cash', 'bkash', 'nagad', 'rocket', 'card', 'bank'];
 
@@ -25,7 +25,7 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
   const [invoice, setInvoice] = useState(null);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [pay, setPay] = useState({ amount: '', method: 'cash', transactionRef: '', note: '' });
+  const [pay, setPay] = useState({ amount: '', invoiceNo: '', method: 'cash', transactionRef: '', note: '' });
   const [saving, setSaving] = useState(false);
   const [paymentKey, setPaymentKey] = useState(() => crypto.randomUUID());
   const [receipt, setReceipt] = useState(null);
@@ -39,7 +39,7 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
       setInvoice(res.data.item);
       setPayments(res.data.payments || []);
       const balance = due(res.data.item);
-      setPay({ amount: balance > 0 ? String(balance) : '', method: 'cash', transactionRef: '', note: '' });
+      setPay({ amount: balance > 0 ? String(balance) : '', invoiceNo: '', method: 'cash', transactionRef: '', note: '' });
       return res.data;
     } finally {
       setLoading(false);
@@ -62,6 +62,7 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
       const recorded = await api.post('/fees/payments', {
         invoice: invoiceId,
         amount: Number(pay.amount),
+        invoiceNo: pay.invoiceNo.trim(),
         method: pay.method,
         transactionRef: pay.transactionRef,
         note: pay.note,
@@ -88,16 +89,16 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
       ) : receipt ? <PaymentReceipt payment={receipt} invoice={invoice} onBack={() => setReceipt(null)} /> : (
         <div className="space-y-5">
           <PrintDocument
-            title={d('invoice')}
-            stamp={{ label: d(STAMPS[invoice.status]), tone: invoice.status }}
+            title={invoice.historicalImport ? t('fees.historicalSummary') : d('invoice')}
+            stamp={{ label: invoice.voidedAt ? f('voided') : d(STAMPS[invoice.status]), tone: invoice.status }}
             signatures={[d('sigAccountant'), d('sigPrincipal')]}
           >
             <DocFields rows={[
               [d('student'), bt(invoice.student?.name, lang)],
-              [d('invoiceNo'), invoice.invoiceNo],
+              [f('systemInvoiceNo'), invoice.invoiceNo],
               [d('admissionNo'), invoice.student?.admissionNo],
-              [d('invoiceDate'), date(invoice.billingDate || invoice.createdAt)],
-              [d('classSection'), [bt(invoice.student?.class?.name, lang), bt(invoice.student?.section?.name, lang)].filter(Boolean).join(' / ')],
+              [d('invoiceDate'), invoice.historicalImport ? '—' : date(invoice.billingDate || invoice.createdAt)],
+              [d('classSection'), [bt((invoice.class || invoice.student?.class)?.name, lang), bt(invoice.student?.section?.name, lang)].filter(Boolean).join(' / ')],
               [d('period'), bt(invoice.period, lang)],
               [d('roll'), invoice.student?.roll],
               [d('dueDate'), invoice.dueDate && date(invoice.dueDate)],
@@ -114,6 +115,7 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
               ]}
             />
             <DocWords amount={invoice.totalAmount} />
+            {invoice.historicalImport && <DocNote>{t('fees.historicalImportHint')}</DocNote>}
           </PrintDocument>
 
           {/* Payment history */}
@@ -128,12 +130,14 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
                     <span className="text-slate-600">
                       <button className="mr-2 text-brand-600 underline no-print" onClick={() => setReceipt(p)}>{p.receiptNo || f('receipt')}</button>
                       {canPay && invoice.status !== 'cancelled' && <button className="mr-2 text-brand-600 underline no-print" onClick={() => setCorrection(p)}>{f('correctPayment')}</button>}
-                      {new Date(p.paidAt).toLocaleDateString()} · {t(`fees.methods.${p.method}`)}
+                      {p.paidAt ? new Date(p.paidAt).toLocaleDateString() : '—'} · {t(`fees.methods.${p.method}`)}
                       {p.transactionRef ? ` · ${p.transactionRef}` : ''}
+                      {p.invoiceNo && <span className="block text-xs">{f('physicalInvoiceNo')}: {p.invoiceNo}</span>}
                     </span>
                     <span className="font-medium text-slate-800">
                       {taka}
                       {Number(p.amount).toLocaleString()}
+                      {p.voidedAt && <span className="block text-xs text-red-700">{f('voided')} · {taka}{Number(p.voidedAmount).toLocaleString()}</span>}
                       {p.refundedAmount > 0 && <span className="block text-xs text-amber-700">{f('refunded')}: {taka}{p.refundedAmount.toLocaleString()}</span>}
                     </span>
                   </li>
@@ -146,7 +150,12 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
           {canPay && balance > 0 && invoice.status !== 'cancelled' && (
             <form onSubmit={submitPayment} className="rounded-xl border border-slate-200 p-4 no-print">
               <h3 className="mb-3 text-sm font-semibold text-slate-700">{t('fees.recordPayment')}</h3>
+              <p className="mb-3 text-sm text-slate-600">{lang === 'bn' ? 'এখানে শুধু এখন জমা দেওয়া টাকা লিখুন। অবশিষ্ট টাকা বকেয়া থাকবে।' : 'Enter only the amount received now. The remaining amount will stay due.'}</p>
+              <p className="mb-3 text-sm font-semibold text-amber-700">{lang === 'bn' ? 'এই পেমেন্টের পরে বকেয়া' : 'Remaining due after this payment'}: {taka}{Math.max(0, balance - (Number(pay.amount) || 0)).toLocaleString()}</p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label={f('physicalInvoiceNo')} required>
+                  <TextInput required pattern=".*\S.*" maxLength={100} value={pay.invoiceNo} onChange={(e) => setPay((p) => ({ ...p, invoiceNo: e.target.value }))} placeholder={lang === 'bn' ? 'এই পেমেন্টের রসিদ বইয়ের নম্বর' : 'Receipt-book number for this payment'} />
+                </Field>
                 <Field label={t('fees.payAmount')} required>
                   <TextInput
                     type="number"

@@ -9,7 +9,7 @@ import PrintDocument, { DocFields, DocItems, DocWords, useDocText } from '../../
  * @param {() => void} onClose
  */
 export default function TransactionVoucher({ txn, type, onClose }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { d, bt, date } = useDocText();
   const isIncome = type === 'income';
 
@@ -27,11 +27,12 @@ export default function TransactionVoucher({ txn, type, onClose }) {
             : [d('sigRecipient'), d('sigAccountant'), d('sigPrincipal')]}
         >
           <DocFields rows={[
-            [isIncome ? d('receiptNo') : d('voucherNo'), voucherNo],
+            [isIncome ? d('receiptNo') : (i18n.language?.startsWith('bn') ? 'সিস্টেম রেফারেন্স' : 'System reference'), txn.internalImportRef || voucherNo],
             [d('date'), date(txn.date)],
+            txn.coveredPeriod && [d('period'), txn.coveredPeriod],
             [isIncome ? d('receivedFrom') : d('paidTo'), isIncome ? txn.source : txn.payee],
             [d('method'), txn.method ? t(`finance.methods.${txn.method}`) : '—'],
-            txn.reference && [isIncome ? t('finance.invoiceNo') : t('finance.voucherNo'), txn.reference],
+            [isIncome ? t('finance.invoiceNo') : t('finance.voucherNo'), txn.reference || '—'],
           ]} />
           <DocItems
             items={[{ label: bt(txn.category?.name) || title, sub: txn.note, amount: txn.amount }]}

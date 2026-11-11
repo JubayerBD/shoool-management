@@ -108,7 +108,7 @@ export default function TransactionManager({ type }) {
     setForm({
       category: r.category?.id || r.category?._id || r.category || '',
       amount: r.amount ?? '',
-      date: r.date ? schoolDate(r.date) : today(),
+      date: r.date ? schoolDate(r.date) : '',
       method: r.method || 'cash',
       [partyKey]: r[partyKey] || '',
       reference: r.reference || '',
@@ -151,6 +151,7 @@ export default function TransactionManager({ type }) {
     { key: 'party', header: partyLabel, render: (r) => r.partner && user.role === 'admin' ? <Link className="text-brand-600 hover:underline" to={`/partners/${r.partner}`}>{r[partyKey]}</Link> : r[partyKey] || '—' },
     { key: 'method', header: t('finance.method'), render: (r) => r.method ? t(`finance.methods.${r.method}`) : '—' },
     { key: 'reference', header: isIncome ? t('finance.invoiceNo') : t('finance.voucherNo'), render: (r) => r.reference || '—' },
+    ...(!isIncome ? [{ key: 'coveredPeriod', header: lang === 'bn' ? 'খরচের সময়কাল' : 'Expense period', render: (r) => r.coveredPeriod || '—' }] : []),
     {
       key: 'amount',
       header: t('finance.amount'),

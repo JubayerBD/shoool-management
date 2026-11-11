@@ -33,7 +33,7 @@ export default function FeeAdjustments() {
   const max = form.type === 'refund' ? (selectedPayment?.amount || 0) - (selectedPayment?.refundedAmount || 0) : selected ? due(selected) : 0;
   const save = async (e) => {
     e.preventDefault(); setBusy(true); setError('');
-    try { await api.post('/fees/adjustments', { ...form, amount: form.type === 'cancellation' ? 0 : Number(form.amount), payment: form.type === 'refund' ? form.payment : undefined }); setOpen(false); await load(); }
+    try { await api.post('/fees/adjustments', { ...form, amount: ['cancellation', 'void'].includes(form.type) ? 0 : Number(form.amount), payment: form.type === 'refund' ? form.payment : undefined }); setOpen(false); await load(); }
     catch (err) { setError(err.response?.data?.error?.message || f('error')); }
     finally { setBusy(false); }
   };
@@ -55,14 +55,16 @@ export default function FeeAdjustments() {
     <Modal open={open} onClose={() => !busy && setOpen(false)} title={f('request')}><form onSubmit={save} className="space-y-4"><ErrorNotice error={error} />
       <Field label={f('student')} required><StudentPicker students={students} value={student} onChange={setStudent} /></Field>
       <Field label={f('invoice')} required><Select required value={form.invoice} onChange={(e) => setForm({ ...form, invoice: e.target.value, payment: '' })}><option value="">{f('choose')}</option>{bills.map((bill) => <option key={recordId(bill)} value={recordId(bill)}>{bill.invoiceNo} · {f('outstanding')}: {money(due(bill))}</option>)}</Select></Field>
-      <Field label={f('type')}><Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, amount: '', payment: '' })}>{['waiver', 'cancellation', 'refund'].map((key) => <option key={key} value={key}>{f(key)}</option>)}</Select></Field>
+      <Field label={f('type')}><Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value, amount: '', payment: '' })}>{['waiver', 'cancellation', 'refund', 'void'].map((key) => <option key={key} value={key}>{f(key)}</option>)}</Select></Field>
+      {form.type === 'void' && <Notice>{f('voidHint')}</Notice>}
       {form.type === 'refund' && <Field label={f('paymentToRefund')} required><Select required value={form.payment} onChange={(e) => setForm({ ...form, payment: e.target.value })}><option value="">{f('choose')}</option>{payments.filter((payment) => payment.amount > (payment.refundedAmount || 0)).map((payment) => <option key={recordId(payment)} value={recordId(payment)}>{payment.receiptNo || `REC-${recordId(payment)}`} · {money(payment.amount - (payment.refundedAmount || 0))}</option>)}</Select></Field>}
-      {form.type !== 'cancellation' && <Field label={f('amount')} required><TextInput required type="number" min="0.01" max={max} step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>}
+      {!['cancellation', 'void'].includes(form.type) && <Field label={f('amount')} required><TextInput required type="number" min="0.01" max={max} step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field>}
       <Field label={f('reason')} required><TextInput required minLength={3} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></Field>
       <div className="flex justify-end gap-2"><button type="button" className={buttonClass} disabled={busy} onClick={() => setOpen(false)}>{f('cancel')}</button><button className={primaryClass} disabled={busy || !form.invoice}>{f('request')}</button></div>
     </form></Modal>
     <Modal open={!!review} onClose={() => !busy && setReview(null)} title={f('review')}><form onSubmit={decide} className="space-y-4"><ErrorNotice error={error} />
       {review && <Notice>{f(review.item.type)} · {review.item.type === 'payment_correction' ? `${review.item.payment?.receiptNo || ''}: ${money(review.item.previousAmount)} -> ${money(review.item.amount)}` : money(review.item.amount)} · {review.item.reason}</Notice>}
+      {review?.item.type === 'void' && <Notice>{f('voidHint')}</Notice>}
       <Field label={f('reviewNote')} required><TextInput required minLength={3} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       <div className="flex justify-end"><button disabled={busy} className={primaryClass}>{f(review?.decision === 'approved' ? 'approve' : 'reject')}</button></div>
     </form></Modal>

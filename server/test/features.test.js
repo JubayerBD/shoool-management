@@ -33,6 +33,177 @@ before(async () => {
 }, { timeout: 120000 });
 after(async () => { if (server) await new Promise((resolve) => server.close(resolve)); await mongoose.disconnect(); await mongo?.stop(); });
 
+test('student admission imports preserve unknown details, long birth registrations and academic year filters', async () => {
+  const payload = {
+    admissionNo: 'QA-IMPORT-2026-001', name: { en: 'বাংলা নাম', bn: 'বাংলা নাম' },
+    class: klass.id, academicYear: year.id, gender: '', admissionDate: null,
+    contactPhone: '01720673223', birthRegistrationNo: '20135628703105801',
+    department: 'নূরাণী', notes: 'Official admission and roll numbers were not provided.',
+  };
+  const created = await request('/people/students', payload);
+  assert.equal(created.status, 201);
+  assert.equal(created.item.gender, '');
+  assert.equal(created.item.admissionDate, null);
+  assert.equal(created.item.roll, undefined);
+  const edited = await request(`/people/students/${created.item.id}`, { notes: 'Verified class membership.' }, admin, 'PUT');
+  assert.equal(edited.status, 200);
+  assert.equal(edited.item.contactPhone, payload.contactPhone);
+  assert.equal(edited.item.birthRegistrationNo, payload.birthRegistrationNo);
+  assert.equal(edited.item.department, payload.department);
+  const list = await request(`/people/students?academicYear=${year.id}&class=${klass.id}&search=QA-IMPORT-2026-001`);
+  assert.equal(list.total, 1);
+  assert.equal(list.items[0].academicYear.id, year.id);
+  assert.equal((await request(`/people/students?academicYear=${new mongoose.Types.ObjectId()}&search=QA-IMPORT-2026-001`)).total, 0);
+  assert.equal((await request(`/people/students/${created.item.id}`, undefined, admin, 'DELETE')).status, 200);
+});
+
+test('student enrollments support two classes, preserve year history and prevent duplicate identities and cross-year matches', async () => {
+  const extra = await m.Class.create({ name: { en: 'Noorani' }, academicYear: year.id });
+  const nextYear = await m.AcademicYear.create({ name: { en: '2027' }, startDate: new Date('2027-01-01'), endDate: new Date('2027-12-31') });
+  const upper = await m.Class.create({ name: { en: 'Class 7' }, academicYear: nextYear.id });
+  const records = await m.Enrollment.create([
+    { student: student.id, academicYear: year.id, class: klass.id },
+    { student: student.id, academicYear: year.id, class: extra.id },
+    { student: student.id, academicYear: nextYear.id, class: upper.id },
+  ]);
+  await assert.rejects(m.Enrollment.create({ student: student.id, academicYear: year.id, class: extra.id }), e => e.code === 11000);
+  const cohort = await request(`/people/students?class=${extra.id}&academicYear=${year.id}`);
+  assert.equal(cohort.total, 1);
+  assert.equal(cohort.items[0].id, student.id);
+  assert.equal(cohort.items[0].enrollments.length, 3);
+  assert.equal((await request(`/people/students?class=${upper.id}&academicYear=${year.id}`)).total, 0, 'Class and year must match the same enrollment');
+  assert.equal((await request(`/people/students?class=${upper.id}&academicYear=${nextYear.id}`)).total, 1);
+  assert.equal((await request(`/people/students?search=${student.admissionNo}`)).total, 1, 'Multiple enrollments must not duplicate student rows');
+  assert.equal((await request(`/people/students/${student.id}`)).item.enrollments.length, 3);
+  assert.equal((await request(`/academics/classes/${extra.id}`, undefined, admin, 'DELETE')).status, 409);
+  assert.equal((await request(`/academics/academic-years/${nextYear.id}`, undefined, admin, 'DELETE')).status, 409);
+  assert.equal((await request(`/people/students/${student.id}`, undefined, admin, 'DELETE')).status, 409);
+  assert.equal((await request('/people/students?class=invalid')).status, 400);
+  await m.Enrollment.deleteMany({ _id: { $in: records.map(r => r.id) } });
+  await m.Class.deleteMany({ _id: { $in: [extra.id, upper.id] } });
+  await m.AcademicYear.deleteOne({ _id: nextYear.id });
+});
+
+test('historical paid summaries preserve unknown dates, separate Noorani fees and reconcile without invented dues', async () => {
+  const noorani = await m.Class.create({ name: { en: 'Noorani fee test' }, academicYear: year.id });
+  const before = await request('/finance/balance');
+  const beforeSummary = await request('/finance/summary');
+  const beforeAccount = await request(`/fees/accounts/${student.id}`);
+  const bills = [], payments = [];
+  try {
+    for (const [grade, amount, suffix] of [[klass, 1200, 'regular'], [noorani, 1000, 'noorani']]) {
+      const key = `historical-fee-test-${suffix}`;
+      const bill = await m.Invoice.create({ invoiceNo: `HIST-TEST-${suffix}`, generationKey: key,
+        student: student.id, class: grade.id, academicYear: year.id, historicalImport: true,
+        period: { en: '2026-01' }, items: [{ title: { en: 'Historical tuition paid' }, amount }],
+        totalAmount: amount, grossAmount: amount, paidAmount: amount, status: 'paid', dueDate: null });
+      bills.push(bill);
+      payments.push(await m.Payment.create({ invoice: bill.id, student: student.id, amount,
+        idempotencyKey: key, receiptNo: `HSUM-TEST-${suffix}`, historicalImport: true,
+        paidAt: null, method: 'unknown', feePeriod: '2026-01', importedBy: admin.id }));
+    }
+    const account = await request(`/fees/accounts/${student.id}`);
+    assert.equal(account.totals.collected - beforeAccount.totals.collected, 2200);
+    assert.equal(account.totals.due, beforeAccount.totals.due);
+    assert.ok(account.payments.filter(p => payments.some(x => x.id === p.id)).every(p => p.paidAt === null && p.method === 'unknown'));
+    assert.equal(account.ledger.at(-1).balance, beforeAccount.ledger.at(-1)?.balance || 0);
+    const summary = await request('/finance/summary');
+    assert.equal(summary.summary.income.fees - beforeSummary.summary.income.fees, 2200);
+    const dated = await request('/finance/summary?from=2026-01-01&to=2026-12-31');
+    assert.equal(dated.summary.income.fees, 0, 'Fee period must not be used as collection date');
+    const analytics = await request('/finance/analytics');
+    assert.equal(analytics.monthly.find(r => r.label === 'Undated').income, 2200);
+    assert.ok(!analytics.monthly.some(r => r.label.startsWith('1970')));
+    const balance = await request('/finance/balance');
+    assert.equal(balance.currentBalance, before.currentBalance);
+    assert.equal(balance.undatedFeeCollections - before.undatedFeeCollections, 2200);
+    assert.equal((await request(`/fees/dues-report?class=${noorani.id}`)).totals.paid, 1000);
+    assert.equal((await request(`/fees/dues-report?class=${klass.id}`)).totals.paid, 1200);
+  } finally {
+    await m.Payment.deleteMany({ _id: { $in: payments.map(p => p.id) } });
+    await m.Invoice.deleteMany({ _id: { $in: bills.map(p => p.id) } });
+    await m.Class.deleteOne({ _id: noorani.id });
+  }
+});
+
+test('teacher imports preserve unknown personal details and populated subject assignments', async () => {
+  const subjects = await m.Subject.create([
+    {name:{en:'QA General Social Studies',bn:'সমাজ'},code:'QA-SOC',class:null,fullMarks:null,passMarks:null},
+    {name:{en:'QA General Science',bn:'বিজ্ঞান'},code:'QA-SCI',class:null,fullMarks:null,passMarks:null},
+  ]);
+  let created;
+  try {
+    const result=await request('/people/teachers',{
+      employeeId:'QA-IMPORT-TCH-001',name:{en:'বাংলা শিক্ষক',bn:'বাংলা শিক্ষক'},
+      gender:'',joiningDate:null,status:'',subjects:subjects.map(s=>s.id),notes:'Current employment status not confirmed.',
+    });
+    assert.equal(result.status,201); created=result.item;
+    assert.equal(created.gender,'');assert.equal(created.joiningDate,null);assert.equal(created.status,'');
+    const detail=await request(`/people/teachers/${created.id}`);
+    assert.deepEqual(detail.item.subjects.map(s=>s.code).sort(),['QA-SCI','QA-SOC']);
+    const list=await request('/people/teachers?search=QA-IMPORT-TCH-001');
+    assert.equal(list.total,1);assert.equal(list.items[0].subjects.length,2);
+    assert.equal((await request(`/people/teachers/${created.id}`,{subjects:[new mongoose.Types.ObjectId().toString()]},admin,'PUT')).status,400);
+    const edited=await request(`/people/teachers/${created.id}`,{status:'active'},admin,'PUT');
+    assert.equal(edited.status,200);assert.equal(edited.item.subjects.length,2);
+    assert.equal(edited.item.joiningDate,null);
+  } finally {
+    if(created)await m.Teacher.deleteOne({_id:created.id});
+    await m.Subject.deleteMany({_id:{$in:subjects.map(s=>s.id)}});
+  }
+});
+
+test('December billing includes secondary Noorani enrollments and unknown admission dates without historical or duplicate invoices', async () => {
+  const {previewSchedule,generateScheduleInvoices,upcomingBillsForStudent}=await import('../src/services/feeSchedules.js');
+  const noorani=await m.Class.create({name:{en:'Noorani billing QA'},academicYear:year.id});
+  const transferredClass=await m.Class.create({name:{en:'Transferred class QA'},academicYear:year.id});
+  const pupils=await m.Student.create([
+    {admissionNo:'QA-DEC-BILL-1',name:{en:'Unknown admission date'},class:klass.id,academicYear:year.id,admissionDate:null},
+    {admissionNo:'QA-DEC-BILL-2',name:{en:'Late admission'},class:klass.id,academicYear:year.id,admissionDate:new Date('2026-12-15')},
+    {admissionNo:'QA-DEC-BILL-3',name:{en:'Transferred and withdrawn'},class:transferredClass.id,academicYear:year.id,admissionDate:null},
+  ]);
+  const types=await m.FeeStructure.create([
+    {name:{en:'QA Monthly tuition'},amount:1000,autoGenerate:false},
+    {name:{en:'QA Noorani tuition'},amount:1000,autoGenerate:false},
+  ]);
+  const plans=[],schedules=[];
+  try {
+    for(const pupil of pupils)await m.Enrollment.create({student:pupil.id,class:noorani.id,academicYear:year.id,isPrimary:false,status:pupil===pupils[2]?'withdrawn':'enrolled'});
+    await m.Enrollment.create({student:pupils[2].id,class:klass.id,academicYear:year.id,isPrimary:true});
+    for(const [index,grade]of [[0,klass],[1,noorani]]){
+      const items=[{feeType:types[index].id,title:types[index].name,amount:1000,optional:false}];
+      const plan=await m.FeePlan.create({name:{en:`QA December ${index}`},class:grade.id,academicYear:year.id,items});plans.push(plan);
+      const schedule=await m.BillingSchedule.create({name:`QA December ${index}`,plan:plan.id,class:grade.id,academicYear:year.id,items,
+        feeTypes:[types[index].id],students:pupils.map(p=>p.id),startDate:'2026-12-01',endDate:'2026-12-31',frequency:'monthly',dueDays:9,status:'active'});
+      schedules.push(schedule);
+      const safe={...schedule.toObject(),students:[pupils[0].id,pupils[1].id]};
+      const preview=await previewSchedule(safe,new Date('2026-11-11T00:00:00Z'));
+      assert.equal(preview.summary.invoiceCount,1);assert.equal(preview.summary.total,1000);assert.equal(preview.summary.readyCount,0);
+      await assert.rejects(previewSchedule({...safe,students:[pupils[2].id]}),/active and belong/);
+      await generateScheduleInvoices(schedule,new Date('2026-11-30T00:00:00Z'));
+    }
+    assert.equal(await m.Invoice.countDocuments({billingSchedule:{$in:schedules.map(s=>s.id)}}),0);
+    const upcoming=await upcomingBillsForStudent(pupils[0],new Date('2026-11-11T00:00:00Z'));
+    assert.equal(upcoming.length,2);assert.equal(upcoming.reduce((s,b)=>s+b.totalAmount,0),2000);
+    assert.ok(upcoming.every(b=>b.scheduled&&b.paidAmount===0&&b.billingDate==='2026-12-01'));
+    assert.equal((await upcomingBillsForStudent(pupils[1],new Date('2026-11-11T00:00:00Z'))).length,0);
+    assert.equal((await upcomingBillsForStudent(pupils[2],new Date('2026-11-11T00:00:00Z'))).length,0);
+    plans[1].items[0].amount=777;await plans[1].save();
+    assert.equal((await upcomingBillsForStudent(pupils[0],new Date('2026-11-11T00:00:00Z'))).reduce((s,b)=>s+b.totalAmount,0),2000,'Forecasts use approved frozen rates');
+    for(const schedule of schedules){await generateScheduleInvoices(schedule,new Date('2026-12-01T00:00:00Z'));await generateScheduleInvoices(schedule,new Date('2026-12-01T00:00:00Z'));}
+    const bills=await m.Invoice.find({billingSchedule:{$in:schedules.map(s=>s.id)}});
+    assert.equal(bills.length,2);assert.ok(bills.every(b=>String(b.student)===pupils[0].id&&b.totalAmount===1000));
+    assert.deepEqual(bills.map(b=>String(b.class)).sort(),[klass.id,noorani.id].sort());
+    assert.ok(bills.every(b=>b.billingDate==='2026-12-01'&&schoolDate(b.dueDate)==='2026-12-10'));
+    assert.equal((await upcomingBillsForStudent(pupils[0],new Date('2026-12-01T00:00:00Z'))).length,0,'Issued invoices must not also appear as scheduled charges');
+  }finally{
+    await m.Invoice.deleteMany({billingSchedule:{$in:schedules.map(s=>s.id)}});
+    await m.BillingSchedule.deleteMany({_id:{$in:schedules.map(s=>s.id)}});await m.FeePlan.deleteMany({_id:{$in:plans.map(p=>p.id)}});
+    await m.FeeStructure.deleteMany({_id:{$in:types.map(t=>t.id)}});await m.Enrollment.deleteMany({student:{$in:pupils.map(p=>p.id)}});
+    await m.Student.deleteMany({_id:{$in:pupils.map(p=>p.id)}});await m.Class.deleteMany({_id:{$in:[noorani.id,transferredClass.id]}});
+  }
+});
+
 test('academic setup: create, edit, search, delete unused records and validate related fields on partial edits', async () => {
   const created = await request('/academics/subjects', { name: { en: 'QA Elective' }, class: klass.id, fullMarks: 100, passMarks: 33 });
   assert.equal(created.status, 201);

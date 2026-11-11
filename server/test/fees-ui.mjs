@@ -138,7 +138,8 @@ try {
   await page.screenshot({ path: path.join(output, 'payment-receipt.png'), fullPage: true });
   await printPdf('payment-receipt.pdf');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByRole('heading', { name: 'Payment history', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Fee calendar', exact: true }).waitFor();
+  await page.locator('summary').filter({ hasText: 'Payment history' }).click();
   await page.getByRole('row').filter({ hasText: 'REC-000001' }).getByRole('cell', { name: '\u09f31,000', exact: true }).waitFor();
   await page.getByRole('button', { name: 'REC-000001', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Payment receipt', exact: true });

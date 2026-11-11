@@ -9,6 +9,7 @@ let runRecurringBilling, createInvoice, signToken, schoolDate;
 let admin, studentUser, parent, unlinked, teacher, students;
 
 async function request(path, user = admin, body, method = body ? 'POST' : 'GET') {
+  if (path === '/fees/payments' && body && !Object.hasOwn(body, 'invoiceNo')) body = { ...body, invoiceNo: `BOOK-${body.idempotencyKey || randomUUID()}` };
   const response = await fetch(base + path, { method, headers: {
     Authorization: `Bearer ${signToken({ sub: user.id, role: user.role })}`,
     'Content-Type': 'application/json',
@@ -52,6 +53,89 @@ after(async () => {
 
 const invoiceBody = (student, amount = 100) => ({ student: student.id, items: [{ title: { en: 'Tuition' }, amount }] });
 
+test('void requests require admin review and atomically reverse invoices and every payment', async () => {
+  const { FeeAdjustment } = await import('../src/models/FeeWorkflow.js');
+  const accountant = await User.create({ name: { en: 'Void requester' }, email: `void-${randomUUID()}@test.local`, passwordHash: 'unused', role: 'accountant' });
+  const learner = await Student.create({ name: { en: 'Void learner' }, admissionNo: `VOID-${randomUUID()}` });
+  const bill = await createInvoice(invoiceBody(learner, 1000));
+  const first = await request('/fees/payments', accountant, { invoice: bill.id, amount: 500 });
+  const second = await request('/fees/payments', accountant, { invoice: bill.id, amount: 300 });
+  assert.equal(first.status, 201); assert.equal(second.status, 201);
+  const before = (await request('/finance/summary')).summary.income.fees;
+  const { cashBalance } = await import('../src/services/cashBalance.js');
+  const cashBefore = (await cashBalance()).currentBalance;
+  const submit = () => request('/fees/adjustments', accountant, { invoice: bill.id, type: 'void', amount: 0, reason: 'Incorrect invoice entered; recreate correctly' });
+  const rejected = await submit(); assert.equal(rejected.status, 201);
+  assert.equal((await Invoice.findById(bill.id)).paidAmount, 800);
+  const review = (entry, user, decision = 'approved') => request(`/fees/adjustments/${entry.item.id}/review`, user, { decision, note: 'Checked original receipt and invoice' });
+  assert.equal((await review(rejected, accountant)).status, 403);
+  assert.equal((await review(rejected, admin, 'rejected')).status, 200);
+  assert.equal((await Invoice.findById(bill.id)).paidAmount, 800);
+  assert.equal((await request('/finance/summary')).summary.income.fees, before);
+  const pending = await submit(); assert.equal(pending.status, 201);
+  assert.equal((await submit()).status, 409, 'duplicate pending requests are blocked');
+  const outcomes = await Promise.all([review(pending, admin), review(pending, admin)]);
+  assert.deepEqual(outcomes.map(result => result.status).sort(), [200, 409]);
+  const saved = await Invoice.findById(bill.id);
+  assert.equal(saved.status, 'cancelled'); assert.equal(saved.paidAmount, 0); assert.equal(saved.totalAmount, 1000); assert.ok(saved.voidedAt);
+  for (const result of [first, second]) {
+    const payment = await Payment.findById(result.item.id);
+    assert.equal(payment.amount, 0); assert.equal(payment.voidedAmount, result.item.amount); assert.equal(payment.refundedAmount, 0);
+    assert.ok(payment.voidedAt); assert.equal(String(payment.voidedBy), admin.id);
+  }
+  const account = await request(`/fees/accounts/${learner.id}`);
+  assert.equal(account.totals.billed, 0); assert.equal(account.totals.collected, 0); assert.equal(account.totals.due, 0); assert.equal(account.totals.refunded, 0);
+  assert.equal(account.invoices.length, 1); assert.equal(account.payments.length, 2); assert.equal(account.ledger.length, 0);
+  assert.equal((await request('/finance/summary')).summary.income.fees, before - 800);
+  assert.equal((await cashBalance()).currentBalance, cashBefore - 800);
+  assert.equal(await FeeAdjustment.countDocuments({ invoice: bill.id, type: 'refund' }), 0);
+  assert.equal((await request('/fees/payments', accountant, { invoice: bill.id, amount: 1 })).status, 400);
+  const replacement = await request('/fees/invoices', accountant, { ...invoiceBody(learner, 1000), invoiceNo: `REPLACEMENT-${randomUUID()}` });
+  assert.equal(replacement.status, 201);
+  assert.equal((await request('/fees/payments', accountant, { invoice: replacement.item.id, amount: 800 })).status, 201);
+  assert.equal((await request(`/fees/accounts/${learner.id}`)).totals.due, 200);
+  const stale = await request('/fees/adjustments', accountant, { invoice: replacement.item.id, type: 'void', amount: 0, reason: 'Test stale review protection' });
+  assert.equal((await request('/fees/payments', accountant, { invoice: replacement.item.id, amount: 50 })).status, 201);
+  assert.equal((await review(stale, admin)).status, 409);
+  assert.equal((await Invoice.findById(replacement.item.id)).paidAmount, 850);
+  await review(stale, admin, 'rejected');
+  const payment = await Payment.findOne({ invoice: replacement.item.id });
+  const refund = await request('/fees/adjustments', accountant, { invoice: replacement.item.id, type: 'refund', payment: payment.id, amount: 10, reason: 'Actual cash returned' });
+  assert.equal((await review(refund, admin)).status, 200);
+  assert.equal((await request('/fees/adjustments', accountant, { invoice: replacement.item.id, type: 'void', amount: 0, reason: 'Cannot erase real refund' })).status, 400);
+  await Payment.deleteMany({ student: learner.id });
+  await Invoice.deleteMany({ student: learner.id });
+  await FeeAdjustment.deleteMany({ student: learner.id });
+});
+
+test('fee invoices get system numbers and installment payments require separate physical invoice numbers', async () => {
+  const learner = await Student.create({name:{en:'Installment learner'}, admissionNo:`INST-${randomUUID()}`});
+  const created = await request('/fees/invoices', admin, { ...invoiceBody(learner, 1000), invoiceNo: 'NOT-A-SYSTEM-NUMBER' });
+  assert.equal(created.status, 201);
+  assert.match(created.item.invoiceNo, /^INV-\d+$/);
+  const billId=created.item.id;
+  for (const invoiceNo of [undefined, '', '   ', 123, 'x'.repeat(101)]) {
+    assert.equal((await request('/fees/payments', admin, {invoice:billId, amount:800, invoiceNo})).status,400);
+  }
+  const first=await request('/fees/payments', admin, {invoice:billId, amount:800, invoiceNo:'  000081-book  '});
+  assert.equal(first.status,201); assert.equal(first.item.invoiceNo,'000081-book');
+  assert.equal(first.invoice.paidAmount,800); assert.equal(first.invoice.status,'partial');
+  const second=await request('/fees/payments', admin, {invoice:billId, amount:200, invoiceNo:'000082-book'});
+  assert.equal(second.status,201); assert.equal(second.invoice.paidAmount,1000); assert.equal(second.invoice.status,'paid');
+  const other=await createInvoice(invoiceBody(learner,1000));
+  assert.equal((await request('/fees/payments', admin, {invoice:other.id,amount:100,invoiceNo:'000081-book'})).status,409);
+  assert.equal((await Invoice.findById(other.id)).paidAmount,0);
+  const key=randomUUID();
+  const payload={invoice:other.id,amount:100,invoiceNo:'000083-book',idempotencyKey:key};
+  assert.equal((await request('/fees/payments',admin,payload)).status,201);
+  assert.equal((await request('/fees/payments',admin,payload)).status,201);
+  assert.equal((await request('/fees/payments',admin,{...payload,invoiceNo:'000084-book'})).status,409);
+  assert.equal(await Payment.countDocuments({invoice:other.id}),1);
+  assert.equal((await Payment.findById(first.item.id)).invoiceNo,'000081-book');
+  await Invoice.deleteMany({student:learner.id});
+  await Payment.deleteMany({student:learner.id});
+});
+
 test('manual income and expenses require a nonblank physical document number on create and edit', async () => {
   for (const [endpoint, reference] of [['income', '000123-INV'], ['expenses', '000456-VCH']]) {
     const path = `/finance/${endpoint}`;
@@ -79,14 +163,24 @@ test('partner capital controls shares, preserves deposit history, and safely ret
   assert.equal((await request('/partners', admin, { name: 'Missing fields' })).status, 400);
   const body = { name: 'Partner A', phone: '01700000000', address: 'Dhaka', email: '' };
   const a = (await request('/partners', admin, body)).item;
-  const b = (await request('/partners', admin, { ...body, name: 'Partner B' })).item;
+  const bResponse = await request('/partners', admin, { name: 'Partner B', address: 'Dhaka' });
+  assert.equal(bResponse.status, 201, 'Partners with unknown phone numbers can be recorded');
+  const b = bResponse.item;
+  assert.equal(b.phone, '', 'Unknown phone numbers stay blank');
+  assert.equal((await request(`/partners/${b.id}`, admin, { name: b.name, address: b.address, phone: '' }, 'PUT')).status, 200);
+  assert.equal((await request('/partners', admin, { ...body, phone: 123 })).status, 400, 'Provided phone numbers must be text');
   const empty = await request('/partners?profit=100');
   assert.equal(empty.totalCapital, 0);
   assert.ok(empty.items.every((p) => p.percentage === 0 && p.profit === 0));
-  const deposit = { amount: 100000, date: schoolDate(), requestKey: randomUUID() };
+  const deposit = { amount: 100000, date: schoolDate(), invoiceNo: '  001208  ', requestKey: randomUUID() };
+  for (const invoiceNo of [undefined, '', '   ', 1208, 'x'.repeat(201)]) {
+    assert.equal((await request(`/partners/${a.id}/deposits`, admin, { ...deposit, invoiceNo })).status, 400);
+  }
   const results = await Promise.all([0, 1].map(() => request(`/partners/${a.id}/deposits`, admin, deposit)));
   assert.ok(results.every((r) => r.status === 201));
   assert.equal(results[0].item.id, results[1].item.id);
+  assert.equal(results[0].item.invoiceNo, '001208', 'Invoice numbers retain leading zeros and trim surrounding whitespace');
+  assert.equal((await request(`/partners/${a.id}/deposits`, admin, { ...deposit, invoiceNo: '001209' })).status, 409, 'Retry keys cannot change invoice numbers');
   assert.equal((await request(`/partners/${a.id}/deposits`, admin, { ...deposit, amount: 2 })).status, 409);
   assert.equal((await request(`/partners/${b.id}/deposits`, admin, { ...deposit, requestKey: randomUUID(), amount: -1 })).status, 400);
   assert.equal((await request(`/partners/${b.id}/deposits`, admin, { ...deposit, requestKey: randomUUID(), amount: 1.001 })).status, 400);
@@ -100,6 +194,7 @@ test('partner capital controls shares, preserves deposit history, and safely ret
   assert.equal(history.deposits.length, 1);
   assert.equal(history.deposits[0].amount, 100000);
   assert.equal(history.deposits[0].recordedBy, admin.id);
+  assert.equal(history.deposits[0].invoiceNo, '001208');
   await request(`/partners/${b.id}/deposits`, admin, { ...deposit, requestKey: randomUUID(), amount: 50000 });
   const equal = await request('/partners?profit=100');
   assert.ok(equal.items.every((p) => p.percentage === 50 && p.profit === 50));
@@ -108,6 +203,7 @@ test('partner capital controls shares, preserves deposit history, and safely ret
   assert.equal(investments.items.reduce((sum, r) => sum + r.amount, 0), 200000);
   const incomeEntry = investments.items.find((r) => r.partner === a.id);
   assert.equal(incomeEntry.source, 'Partner A');
+  assert.equal(incomeEntry.reference, '001208');
   assert.equal(incomeEntry.category.name.en, 'Partner investment');
   assert.equal((await request('/finance/income?category=partner-investment&search=Partner%20B')).total, 2);
   const paged = await request('/finance/income?category=partner-investment&limit=2&page=2');

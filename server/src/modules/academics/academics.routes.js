@@ -9,6 +9,7 @@ import { Attendance } from '../../models/Attendance.js';
 import { FeeStructure } from '../../models/Fees.js';
 import { FeePlan } from '../../models/FeeWorkflow.js';
 import { blockIfInUse } from '../../utils/inUse.js';
+import { Enrollment } from '../../models/Enrollment.js';
 
 const router = Router();
 
@@ -28,7 +29,7 @@ mount('/academic-years', AcademicYear, {
   searchable: ['name.en', 'name.bn'],
   filterable: ['isCurrent'],
   defaultSort: { startDate: -1 },
-  guardRemove: blockIfInUse([[Class, 'academicYear', 'classes'], [Student, 'academicYear', 'students'], [Exam, 'academicYear', 'exams'], [FeePlan, 'academicYear', 'fee plans']]),
+  guardRemove: blockIfInUse([[Class, 'academicYear', 'classes'], [Student, 'academicYear', 'students'], [Enrollment, 'academicYear', 'enrollment history'], [Exam, 'academicYear', 'exams'], [FeePlan, 'academicYear', 'fee plans']]),
 });
 
 mount('/classes', Class, {
@@ -36,7 +37,7 @@ mount('/classes', Class, {
   searchable: ['name.en', 'name.bn'],
   filterable: ['academicYear'],
   defaultSort: { numericLevel: 1 },
-  guardRemove: blockIfInUse([[Section, 'class', 'sections'], [Student, 'class', 'students'], [Subject, 'class', 'subjects'], [FeePlan, 'class', 'fee plans'], [FeeStructure, 'class', 'fee types']]),
+  guardRemove: blockIfInUse([[Section, 'class', 'sections'], [Student, 'class', 'students'], [Enrollment, 'class', 'enrollment history'], [Subject, 'class', 'subjects'], [FeePlan, 'class', 'fee plans'], [FeeStructure, 'class', 'fee types']]),
 });
 
 mount('/sections', Section, {
@@ -44,7 +45,7 @@ mount('/sections', Section, {
   searchable: ['name.en', 'name.bn'],
   filterable: ['class'],
   defaultSort: { 'name.en': 1 },
-  guardRemove: blockIfInUse([[Student, 'section', 'students'], [TimetableSlot, 'section', 'timetable slots'], [Attendance, 'section', 'attendance records']]),
+  guardRemove: blockIfInUse([[Student, 'section', 'students'], [Enrollment, 'section', 'enrollment history'], [TimetableSlot, 'section', 'timetable slots'], [Attendance, 'section', 'attendance records']]),
 });
 
 mount('/subjects', Subject, {

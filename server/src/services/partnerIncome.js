@@ -13,6 +13,6 @@ export async function partnerIncome(range = {}) {
     category: PARTNER_INCOME_CATEGORY, source: d.partner?.name || 'Partner',
     partner: String(d.partner?._id || ''), partnerDeposit: d.id,
     isReversed: d.isReversed === true,
-    method: '', reference: '', note: d.note, recordedBy: d.recordedBy,
+    method: '', reference: d.invoiceNo || '', note: d.note, recordedBy: d.recordedBy,
   }));
 }

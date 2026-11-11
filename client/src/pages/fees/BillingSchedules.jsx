@@ -20,7 +20,13 @@ export default function BillingSchedules() {
   const load = () => getAll('/fees/schedules').then((r) => setRows(r.data.items)).catch((err) => setError(err.response?.data?.error?.message || f('error')));
   useEffect(() => { load(); }, []);
   const plan = refs.plans.find((item) => recordId(item) === form.plan);
-  const eligible = refs.students.filter((student) => student.status === 'active' && recordId(student.class) === recordId(plan?.class) && recordId(student.academicYear) === recordId(plan?.academicYear));
+  const eligible = refs.students.filter((student) => {
+    if (!plan || student.status !== 'active' || recordId(student.academicYear) !== recordId(plan.academicYear)) return false;
+    const memberships = (student.enrollments || []).filter(e => recordId(e.class) === recordId(plan.class) && recordId(e.academicYear) === recordId(plan.academicYear));
+    const active = e => ['enrolled', 'repeated'].includes(e.status);
+    if (memberships.some(e => !active(e))) return false;
+    return recordId(student.class) === recordId(plan.class) || memberships.some(e => e.isPrimary === false && active(e));
+  });
   const shown = eligible.filter((student) => `${bt(student.name)} ${student.admissionNo}`.toLowerCase().includes(search.toLowerCase()));
   const field = (key, value) => { setPreview(null); setForm((old) => ({ ...old, [key]: value })); };
   const choosePlan = (id) => {

@@ -1,4 +1,9 @@
 const entries = {
+  physicalInvoiceNo: ['Invoice No (physical)', 'ইনভয়েস নং (রসিদ বই)'],
+  systemInvoiceNo: ['System invoice No', 'সিস্টেম ইনভয়েস নং'],
+  void: ['Void invoice & payments', 'ইনভয়েস ও পেমেন্ট বাতিল'],
+  voided: ['VOID — not a valid payment', 'বাতিল — বৈধ পেমেন্ট নয়'],
+  voidHint: ['Admin approval will void this invoice and all its payments. Balances will be reversed without recording a refund. Original records and numbers remain in the audit history; use a new invoice number when recreating.', 'অ্যাডমিন অনুমোদন করলে ইনভয়েস ও সব পেমেন্ট বাতিল হবে। রিফান্ড না দেখিয়ে হিসাব সংশোধন হবে। পুরোনো রেকর্ড ও নম্বর ইতিহাসে থাকবে; নতুন করে তৈরি করার সময় নতুন ইনভয়েস নম্বর দিন।'],
   correctPayment: ['Correct payment', 'পরিশোধ সংশোধন'],
   payment_correction: ['Payment correction', 'পরিশোধ সংশোধন'],
   correctedAmount: ['Correct total amount received (৳)', 'প্রাপ্ত টাকার সঠিক মোট পরিমাণ (৳)'],

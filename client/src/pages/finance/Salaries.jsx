@@ -10,7 +10,7 @@ import RequestReversal from './FinancialControls.jsx';
 import { Link } from 'react-router-dom';
 import Modal from '../../components/ui/Modal.jsx';
 import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
-import PrintDocument, { DocFields, DocItems, DocWords, useDocText } from '../../components/print/PrintDocument.jsx';
+import PrintDocument, { DocFields, DocItems, DocNote, DocWords, useDocText } from '../../components/print/PrintDocument.jsx';
 
 const METHODS = ['cash', 'bkash', 'nagad', 'rocket', 'card', 'bank'];
 const thisMonth = () => schoolDate().slice(0, 7);
@@ -35,6 +35,7 @@ export default function Salaries() {
     allowances: '',
     deductions: '',
     method: 'cash',
+    reference: '',
     note: '',
     paidAt: today(),
   });
@@ -83,6 +84,7 @@ export default function Salaries() {
       allowances: '',
       deductions: '',
       method: 'cash',
+      reference: '',
       note: '',
       paidAt: today(),
     });
@@ -100,6 +102,7 @@ export default function Salaries() {
         allowances: Number(form.allowances) || 0,
         deductions: Number(form.deductions) || 0,
         method: form.method,
+        reference: form.reference.trim(),
         note: form.note,
         paidAt: form.paidAt,
       });
@@ -123,6 +126,7 @@ export default function Salaries() {
       render: (r) => `${taka}${Number(r.net).toLocaleString()}`,
     },
     { key: 'paidAt', header: t('finance.salaries.paidAt'), render: (r) => new Date(r.paidAt).toLocaleDateString() },
+    { key: 'reference', header: t('finance.voucherNo'), render: (r) => r.reference || '—' },
     { key: 'method', header: t('finance.method'), render: (r) => t(`finance.methods.${r.method}`) },
     {
       key: 'actions',
@@ -240,6 +244,9 @@ export default function Salaries() {
               onChange={(e) => setForm((f) => ({ ...f, deductions: e.target.value }))}
             />
           </Field>
+          <Field label={t('finance.voucherNo')} required>
+            <TextInput required maxLength={200} pattern={'.*\\S.*'} value={form.reference} onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} />
+          </Field>
           <Field label={t('finance.method')}>
             <Select value={form.method} onChange={(e) => setForm((f) => ({ ...f, method: e.target.value }))}>
               {METHODS.map((m) => (
@@ -287,7 +294,7 @@ function SalarySlip({ slip }) {
     : slip.month;
   return (
     <PrintDocument
-      title={`${d('salarySlip')}${slip.isReversed ? ' (REVERSED)' : ''}`}
+      title={`${d('salarySlip')}${slip.historicalImport ? (lang === 'bn' ? ' (আমদানিকৃত)' : ' (Imported)') : ''}${slip.isReversed ? ' (REVERSED)' : ''}`}
       copies={[d('copyEmployee'), d('copyOffice')]}
       signatures={[d('sigEmployee'), d('sigAccountant'), d('sigPrincipal')]}
     >
@@ -296,6 +303,7 @@ function SalarySlip({ slip }) {
         [d('month'), monthLabel],
         [d('employeeId'), slip.staff?.employeeId],
         [d('paidOn'), date(slip.paidAt)],
+        [d('voucherNo'), slip.reference || '—'],
         [d('designation'), text(slip.staff?.designation)],
         [d('method'), t(`finance.methods.${slip.method}`)],
       ]} />
@@ -308,6 +316,7 @@ function SalarySlip({ slip }) {
         ]}
       />
       <DocWords amount={slip.net} />
+      {slip.note && <DocNote>{slip.note}</DocNote>}
     </PrintDocument>
   );
 }

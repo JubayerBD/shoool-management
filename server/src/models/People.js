@@ -19,7 +19,11 @@ const studentSchema = new Schema(
     admissionNo: { type: String, required: true, unique: true, trim: true, index: true },
     roll: { type: Number },
     name: { type: bilingual({ requiredEn: true }), required: true },
-    gender: { type: String, enum: ['male', 'female', 'other'], default: 'male' },
+    gender: { type: String, enum: ['', 'male', 'female', 'other'], default: '' },
+    contactPhone: { type: String, trim: true, maxlength: 50, default: '' },
+    birthRegistrationNo: { type: String, trim: true, maxlength: 50, default: '' },
+    department: { type: String, trim: true, maxlength: 200, default: '' },
+    notes: { type: String, trim: true, maxlength: 5000, default: '' },
     dateOfBirth: { type: Date },
     bloodGroup: { type: String, trim: true, default: '' },
     photoUrl: { type: String, trim: true, default: '' },
@@ -38,7 +42,8 @@ const teacherSchema = new Schema(
   {
     employeeId: { type: String, required: true, unique: true, trim: true, index: true },
     name: { type: bilingual({ requiredEn: true }), required: true },
-    gender: { type: String, enum: ['male', 'female', 'other'], default: 'male' },
+    gender: { type: String, enum: ['', 'male', 'female', 'other'], default: '' },
+    notes: { type: String, trim: true, maxlength: 5000, default: '' },
     designation: { type: bilingual() },
     phone: { type: String, trim: true, default: '' },
     email: { type: String, trim: true, lowercase: true, default: '' },
@@ -46,7 +51,7 @@ const teacherSchema = new Schema(
     address: { type: bilingual() },
     subjects: [{ type: Schema.Types.ObjectId, ref: 'Subject' }],
     joiningDate: { type: Date, default: Date.now },
-    status: { type: String, enum: ['active', 'inactive'], default: 'active' },
+    status: { type: String, enum: ['', 'active', 'inactive'], default: 'active' },
   },
   baseSchemaOptions
 );

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { FeePlan, BillingSchedule } from '../models/FeeWorkflow.js';
 import { Invoice, FeeStructure } from '../models/Fees.js';
 import { Student } from '../models/People.js';
+import { Enrollment } from '../models/Enrollment.js';
 import { AcademicYear, Class } from '../models/Academic.js';
 import { parseDay, schoolDate, addMonths } from '../utils/financeDates.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -10,6 +11,22 @@ import { createInvoice, withBillingTransaction } from './billing.js';
 
 const same = (a, b) => String(a) === String(b);
 const querySession = (query, session) => session ? query.session(session) : query;
+
+async function eligibleClassStudents(classId, yearId, ids, session, admissionCutoff) {
+  const memberships = await querySession(Enrollment.find({ student: { $in: ids }, class: classId, academicYear: yearId }).sort({ _id: 1 }), session);
+  const active = record => ['enrolled', 'repeated'].includes(record.status);
+  const blocked = memberships.filter(record => !active(record)).map(record => record.student);
+  const secondary = memberships.filter(record => active(record) && record.isPrimary === false).map(record => record.student);
+  const classMembership = { $or: [
+    { class: classId, academicYear: yearId, _id: { $nin: blocked } },
+    { _id: { $in: secondary }, academicYear: yearId },
+  ] };
+  const conditions = [classMembership];
+  // Existing pupils with unknown admission dates are eligible; do not invent a date.
+  if (admissionCutoff) conditions.push({ $or: [{ admissionDate: null }, { admissionDate: { $lte: admissionCutoff } }] });
+  const students = await querySession(Student.find({ _id: { $in: ids }, status: 'active', $and: conditions }).sort({ _id: 1 }), session);
+  return { students, memberships };
+}
 
 export async function planDetails(body) {
   const year = await AcademicYear.findById(body.academicYear);
@@ -87,8 +104,7 @@ export async function previewSchedule(schedule, now = new Date(), session) {
   }
   const ids = schedule.students.map(String);
   if (!ids.length || new Set(ids).size !== ids.length) throw ApiError.badRequest('Select students once each');
-  const students = await querySession(Student.find({ _id: { $in: ids }, class: plan.class,
-    academicYear: plan.academicYear, status: 'active' }).sort({ _id: 1 }), session);
+  const { students, memberships } = await eligibleClassStudents(plan.class, plan.academicYear, ids, session);
   if (students.length !== ids.length) throw ApiError.badRequest('Students must be active and belong to the plan class and academic year');
   if (new Set(schedule.concessions.map((entry) => String(entry.student))).size !== schedule.concessions.length) {
     throw ApiError.badRequest('Only one concession per student is allowed in a schedule');
@@ -108,7 +124,7 @@ export async function previewSchedule(schedule, now = new Date(), session) {
   const today = schoolDate(now);
   const rows = students.map((student) => {
     const bill = studentBill(schedule, student, selectedItems);
-    const eligibleDates = dates.filter((day) => day >= schoolDate(student.admissionDate));
+    const eligibleDates = dates.filter((day) => !student.admissionDate || day >= schoolDate(student.admissionDate));
     const invoices = eligibleDates.map((day) => ({ date: day, ...studentBill(schedule, student, itemsForDate(schedule, selectedItems, day)) })).filter((entry) => entry.items.length);
     return { student: student.id, name: student.name, admissionNo: student.admissionNo,
       ...bill, invoices, invoiceCount: invoices.length,
@@ -124,8 +140,34 @@ export async function previewSchedule(schedule, now = new Date(), session) {
     discounts: money(out.discounts + row.scheduledDiscount),
     total: money(out.total + row.scheduledTotal),
   }), { students: 0, invoiceCount: 0, readyCount: 0, gross: 0, discounts: 0, total: 0 });
-  const token = createHash('sha256').update(JSON.stringify({ schedule, plan, year, students, today })).digest('hex');
+  const token = createHash('sha256').update(JSON.stringify({ schedule, plan, year, students, memberships, today })).digest('hex');
   return { plan, selectedItems, rows, summary, dates, token };
+}
+
+// Read-only calendar forecast from approved, frozen schedule rates.
+export async function upcomingBillsForStudent(student, now = new Date()) {
+  if (student.status !== 'active') return [];
+  const today = schoolDate(now);
+  const schedules = await BillingSchedule.find({ students: student._id, status: 'active', endDate: { $gte: today } });
+  if (!schedules.length) return [];
+  const existing = new Set(await Invoice.find({ student: student._id, billingSchedule: { $in: schedules.map(s => s._id) } }).distinct('generationKey'));
+  const upcoming = [];
+  for (const schedule of schedules) {
+    const eligible = await eligibleClassStudents(schedule.class, schedule.academicYear, [student.id || student._id]);
+    if (!eligible.students.length) continue;
+    const grade = await Class.findById(schedule.class).select('name').lean();
+    for (const day of scheduleDates(schedule)) {
+      const key = `schedule:${schedule.id}:${student.id || student._id}:${day}`;
+      if (day < today || existing.has(key) || student.admissionDate && day < schoolDate(student.admissionDate)) continue;
+      const bill = studentBill(schedule, student, itemsForDate(schedule, schedule.items, day));
+      if (!bill.items.length) continue;
+      upcoming.push({ id: key, scheduled: true, scheduleId: schedule.id, class: grade,
+        billingDate: day, period: { en: day.slice(0, 7), bn: '' },
+        dueDate: new Date(+parseDay(day) + schedule.dueDays * 86400000),
+        ...bill, paidAmount: 0, waivedAmount: 0, status: 'scheduled' });
+    }
+  }
+  return upcoming.sort((a, b) => a.billingDate.localeCompare(b.billingDate) || a.id.localeCompare(b.id));
 }
 
 export async function generateScheduleInvoices(schedule, now = new Date()) {
@@ -133,9 +175,8 @@ export async function generateScheduleInvoices(schedule, now = new Date()) {
   for (const day of scheduleDates(schedule)) {
     if (day > today) break;
     // Recheck eligibility to stop future charges for withdrawn or transferred students.
-    const students = Student.find({ _id: { $in: schedule.students }, class: schedule.class,
-      academicYear: schedule.academicYear, status: 'active', admissionDate: { $lte: parseDay(day, true) } });
-    for await (const student of students) {
+    const { students } = await eligibleClassStudents(schedule.class, schedule.academicYear, schedule.students, null, parseDay(day, true));
+    for (const student of students) {
       const generationKey = `schedule:${schedule.id}:${student.id}:${day}`;
       if (await Invoice.exists({ generationKey })) continue;
       const bill = studentBill(schedule, student, itemsForDate(schedule, schedule.items, day));
@@ -147,8 +188,10 @@ export async function generateScheduleInvoices(schedule, now = new Date()) {
           const live = await BillingSchedule.findOneAndUpdate({ _id: schedule.id, status: 'active' },
             { $inc: { billingRevision: 1 } }, { session, new: true });
           if (!live || await Invoice.exists({ generationKey }).session(session)) return;
+          const eligible = await eligibleClassStudents(live.class, live.academicYear, [student.id], session, parseDay(day, true));
+          if (!eligible.students.length) return;
           await createInvoice({ ...bill, generationKey, billingSchedule: schedule.id,
-          billingDate: day, student: student.id, academicYear: schedule.academicYear,
+          billingDate: day, student: student.id, class: schedule.class, academicYear: schedule.academicYear,
           period: { en: day, bn: '' }, dueDate: due }, session);
         });
       } catch (err) {

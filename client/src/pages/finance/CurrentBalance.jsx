@@ -26,6 +26,12 @@ export default function CurrentBalance() {
   if (!data) return <div role="alert" className={panel}><p>{error}</p><button className={button} onClick={load}>{tr('Retry', 'আবার চেষ্টা করুন')}</button></div>;
   return <div className="space-y-5">
     <CurrentBalanceCard data={data} onRefresh={load} refreshing={loading} />
+    {!!data.capitalReturns?.length && <details className={panel}>
+      <summary className="cursor-pointer font-semibold">{tr('Returned partner capital', 'অংশীদারদের ফেরত দেওয়া মূলধন')}: {money(data.returnedCapitalTotal)}</summary>
+      <p className="my-3 text-sm text-slate-500">{tr('Recorded separately from operating expenses. Unknown payment dates and physical voucher numbers remain blank; undated returns are excluded from the dated cash balance.', 'পরিচালন খরচ থেকে আলাদা রাখা হয়েছে। অজানা পরিশোধের তারিখ ও ভাউচার নম্বর ফাঁকা; তারিখবিহীন ফেরত তারিখভিত্তিক ব্যালেন্সে অন্তর্ভুক্ত নয়।')}</p>
+      <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{[tr('Former partner', 'সাবেক অংশীদার'), tr('Period', 'সময়কাল'), tr('Amount', 'পরিমাণ'), tr('Paid on', 'পরিশোধের তারিখ'), tr('Voucher No.', 'ভাউচার নং')].map(label => <th className="border-b p-2" key={label}>{label}</th>)}</tr></thead>
+        <tbody>{data.capitalReturns.map(row => <tr key={row.id}><td className="border-b p-2">{row.recipientName}</td><td className="border-b p-2">{row.coveredPeriod}</td><td className="border-b p-2">{money(row.amount)}</td><td className="border-b p-2">{row.paidAt ? new Date(row.paidAt).toLocaleDateString() : '—'}</td><td className="border-b p-2">{row.reference || '—'}</td></tr>)}</tbody></table></div>
+    </details>}
     {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     <div className="grid gap-4 sm:grid-cols-2">{[[tr('Unpaid allocated profit', 'বরাদ্দকৃত অপরিশোধিত লাভ'), data.unpaidProfit], [tr('Balance after unpaid profit', 'অপরিশোধিত লাভ বাদে ব্যালেন্স'), data.balanceAfterUnpaidProfit]].map(([label, amount]) => <div key={label} className={panel}><p className="text-sm text-slate-500">{label}</p><p className={`mt-1 text-xl font-bold ${amount < 0 ? 'text-red-600' : 'text-slate-800'}`}>{money(amount)}</p></div>)}</div>
     <p className="text-sm text-slate-500">{tr('Unpaid profit is an obligation, not money already paid. The balance after unpaid profit does not account for other unrecorded bills or reserves.', 'অপরিশোধিত লাভ একটি দায়; এটি এখনো পরিশোধিত অর্থ নয়। এই হিসাব অন্যান্য অনথিভুক্ত বিল বা সংরক্ষিত অর্থ অন্তর্ভুক্ত করে না।')}</p>

@@ -25,7 +25,9 @@ export default function StudentPicker({ students, value, onChange, placeholder }
           (s) =>
             (s.name?.en || '').toLowerCase().includes(q) ||
             (s.name?.bn || '').includes(query.trim()) ||
-            (s.admissionNo || '').toLowerCase().includes(q)
+            (s.admissionNo || '').toLowerCase().includes(q) ||
+            (s.class?.name?.en || '').toLowerCase().includes(q) ||
+            (s.class?.name?.bn || '').includes(query.trim())
         )
       : students;
     return list.slice(0, 50);
@@ -39,7 +41,8 @@ export default function StudentPicker({ students, value, onChange, placeholder }
     return () => document.removeEventListener('mousedown', onDocDown);
   }, []);
 
-  const display = selected ? `${bt(selected.name, lang)} (${selected.admissionNo})` : '';
+  const classLabel = (student) => `${t('feeFlow.class')}: ${bt(student.class?.name, lang) || '—'}`;
+  const display = selected ? `${bt(selected.name, lang)} · ${classLabel(selected)} (${selected.admissionNo})` : '';
 
   return (
     <div className="relative" ref={ref}>
@@ -55,7 +58,7 @@ export default function StudentPicker({ students, value, onChange, placeholder }
           setQuery('');
         }}
         placeholder={placeholder || t('fees.searchStudent')}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+        className="w-full rounded-lg border border-slate-300 py-2 pl-3 pr-8 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
       />
       {selected && !open && (
         <button
@@ -83,8 +86,8 @@ export default function StudentPicker({ students, value, onChange, placeholder }
                 }}
                 className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50"
               >
-                <span className="font-medium text-slate-800">{bt(s.name, lang)}</span>
-                <span className="shrink-0 text-xs text-slate-400">{s.admissionNo}</span>
+                <span className="min-w-0"><span className="block font-medium text-slate-800">{bt(s.name, lang)}</span><span className="mt-0.5 block text-xs text-slate-500">{classLabel(s)}</span></span>
+                <span className="shrink-0 text-xs text-slate-500">{s.admissionNo}</span>
               </button>
             ))
           )}

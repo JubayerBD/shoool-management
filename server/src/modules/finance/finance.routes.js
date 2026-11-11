@@ -203,6 +203,7 @@ router.get('/salaries', ...finance, async (req, res) => {
 
 router.post('/salaries', ...finance, async (req, res) => {
   const { staff, month, basic = 0, allowances = 0, deductions = 0, method, note, paidAt } = req.body;
+  const reference = documentNumber(req.body.reference, 'Voucher No.');
   if (!staff || !month) throw ApiError.badRequest('Staff and month are required');
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) throw ApiError.badRequest('Month must look like 2026-10');
   if (!(await Teacher.exists({ _id: staff }))) throw ApiError.badRequest('Staff member not found');
@@ -220,6 +221,7 @@ router.post('/salaries', ...finance, async (req, res) => {
     month,
     ...parts,
     net,
+    reference,
     method: method || 'cash',
     note: note || '',
     paidAt: typeof paidAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(paidAt) ? parseDay(paidAt) : paidAt || Date.now(),
@@ -309,7 +311,7 @@ router.get('/analytics', ...finance, async (req, res) => {
   if (correctedSalary !== 0) expenseByHead.unshift({ label: { en: 'Salary', bn: 'বেতন' }, total: correctedSalary });
 
   // The chart uses exactly the same range as the headline and category totals.
-  const monthKey = (d) => schoolDate(d).slice(0, 7);
+  const monthKey = (d) => d ? schoolDate(d).slice(0, 7) : 'Undated';
   const buckets = {};
   const ensure = (k) => (buckets[k] ||= { label: k, income: 0, expense: 0 });
 
