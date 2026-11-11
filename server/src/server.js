@@ -12,11 +12,13 @@ import { startAutomaticBackups } from './services/backups.js';
 import { FinancialCorrection, FinancialLock } from './models/FinancialCorrection.js';
 import { migrateSalaryIndex } from './services/financialOperations.js';
 import { CalendarEvent } from './services/academicCalendar.js';
+import { migrateAttendanceIndex } from './services/attendanceMigration.js';
 
 async function start() {
   try {
     await connectDB();
     await migrateSalaryIndex();
+    await migrateAttendanceIndex();
     await CalendarEvent.init();
     // Unique occurrence/request keys must exist before accepting payments or running jobs.
     await Promise.all([Invoice, Payment, Expense, BillingSchedule, FeeAdjustment, FeePlan, ProfitDistribution, ProfitDistributionLock, OpeningBalance, ProfitPayment, ActivityLog, FinancialCorrection, FinancialLock, Income].map((model) => model.init()));

@@ -4,19 +4,20 @@ import { z } from 'zod';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { Attendance } from '../../models/Attendance.js';
-import { Section } from '../../models/Academic.js';
-import { Student } from '../../models/People.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { assertStudentAccess, isSelfService, ownStudentIds, requireAcademicAccess } from '../../utils/access.js';
 import { parseDay, schoolDate } from '../../utils/financeDates.js';
 import { paginated } from '../../utils/pagination.js';
+import { attendanceContext, attendanceStudents } from '../../services/attendanceRoster.js';
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
 
 const router = Router();
 
 const bulkSchema = z.object({
-  section: objectId,
+  section: objectId.optional(),
+  class: objectId.optional(),
+  academicYear: objectId.optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   records: z
     .array(
@@ -27,7 +28,7 @@ const bulkSchema = z.object({
       })
     )
     .min(1),
-});
+}).refine(body => body.class || body.section, { message: 'Choose a class' });
 
 /** Normalize a date to midnight UTC so one record maps to one calendar day. */
 function dayStart(date) {
@@ -35,32 +36,36 @@ function dayStart(date) {
   return new Date(`${date}T00:00:00.000Z`);
 }
 
-// Bulk upsert attendance for a whole section on a given date.
+// Save attendance for a class, optionally narrowed to one section.
 router.post(
   '/bulk',
   requireAuth,
   requireRole('admin', 'teacher'),
   validate(bulkSchema),
   async (req, res) => {
-    const { section, date, records } = req.body;
+    const { date, records } = req.body;
     const day = dayStart(date);
 
     // Bangladesh is UTC+6; allow "today" there but never a future day.
     if (date > schoolDate()) throw ApiError.badRequest('Attendance cannot be marked for a future date');
-    if (!(await Section.exists({ _id: section }))) throw ApiError.badRequest('Section not found');
+    const context = await attendanceContext(req.body);
+    const roster = await attendanceStudents(context);
+    const byId = new Map(roster.map(student => [String(student._id), student]));
     const ids = [...new Set(records.map((r) => r.student))];
     if (ids.length !== records.length) throw ApiError.badRequest('A student can appear only once in an attendance batch');
-    if ((await Student.countDocuments({ _id: { $in: ids }, section })) !== ids.length) {
-      throw ApiError.badRequest('Every student must belong to the selected section');
+    if (ids.some(id => !byId.has(id))) {
+      throw ApiError.badRequest('Every student must be active and belong to the selected class, academic year and section');
     }
 
     const ops = records.map((r) => ({
       updateOne: {
-        filter: { student: r.student, date: day },
+        filter: { student: r.student, class: context.grade.id, date: day },
         update: {
           $set: {
             student: r.student,
-            section,
+            class: context.grade.id,
+            academicYear: context.year.id,
+            section: byId.get(r.student).section,
             date: day,
             status: r.status,
             remark: r.remark || '',
@@ -80,11 +85,28 @@ router.post(
   }
 );
 
+router.get('/roster', requireAuth, requireRole('admin', 'teacher'), async (req, res) => {
+  const parsed = z.object({ class: objectId, academicYear: objectId, section: objectId.optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).safeParse(req.query);
+  if (!parsed.success) throw ApiError.badRequest('Choose an academic year, class and valid date');
+  const input = parsed.data;
+  const day = dayStart(input.date);
+  if (input.date > schoolDate()) throw ApiError.badRequest('Attendance cannot be marked for a future date');
+  const context = await attendanceContext(input);
+  const students = await attendanceStudents(context);
+  const saved = await Attendance.find({ class: context.grade.id, date: day, student: { $in: students.map(s => s._id) } }).lean();
+  const byStudent = new Map(saved.map(row => [String(row.student), row]));
+  res.json({ items: students.map(student => ({ student: student._id, name: student.name, admissionNo: student.admissionNo, roll: student.roll, status: byStudent.get(String(student._id))?.status || 'present', remark: byStudent.get(String(student._id))?.remark || '' })), total: students.length });
+});
+
 // List attendance, filterable by section/student/date range.
 router.get('/', requireAuth, async (req, res) => {
   const { section, student, from, to } = req.query;
   requireAcademicAccess(req.user);
   const filter = {};
+  for (const key of ['class', 'academicYear']) if (req.query[key]) {
+    if (!objectId.safeParse(req.query[key]).success) throw ApiError.badRequest(`Invalid ${key}`);
+    filter[key] = req.query[key];
+  }
   if (section) filter.section = section;
   if (isSelfService(req.user)) {
     // Students/parents can only ever see their own family's records.

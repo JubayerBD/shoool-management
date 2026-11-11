@@ -235,6 +235,52 @@ test('attendance: save/update daily statuses, retain marking staff, reject inval
   assert.equal(summary.summary.total, 1); assert.equal(summary.summary.late, 1);
 });
 
+test('attendance migration preserves old section records and replaces the daily uniqueness index safely',async()=>{
+  const {migrateAttendanceIndex}=await import('../src/services/attendanceMigration.js');
+  const pupil=await m.Student.create({name:{en:'Legacy attendance'},admissionNo:'ATT-LEGACY',class:klass.id,academicYear:year.id,section:section.id});
+  const legacy=await m.Attendance.collection.insertOne({student:pupil._id,section:section._id,date:new Date('2026-01-15'),status:'absent'});
+  await m.Attendance.collection.createIndex({student:1,date:1},{unique:true});
+  await migrateAttendanceIndex();await migrateAttendanceIndex();
+  const saved=await m.Attendance.findById(legacy.insertedId);
+  assert.equal(String(saved.class),klass.id);assert.equal(String(saved.academicYear),year.id);assert.equal(saved.status,'absent');
+  const indexes=await m.Attendance.collection.indexes();
+  assert.ok(indexes.some(index=>index.unique&&index.key.class===1));
+  assert.ok(!indexes.some(index=>index.unique&&Object.keys(index.key).length===2&&index.key.student===1&&index.key.date===1));
+});
+
+test('attendance works without sections, validates enrollment and keeps simultaneous classes separate', async () => {
+  const grade = await m.Class.create({name:{en:'No-section class'},academicYear:year.id});
+  const noorani = await m.Class.create({name:{en:'Noorani attendance'},academicYear:year.id});
+  const otherYear = await m.AcademicYear.create({name:{en:'2025 attendance'},startDate:new Date('2025-01-01'),endDate:new Date('2025-12-31')});
+  const pupils=await m.Student.create(['Eligible','Inactive','Withdrawn','Other year'].map((name,index)=>({name:{en:name},admissionNo:`ATT-${index}`,class:grade.id,academicYear:index===3?otherYear.id:year.id,status:index===1?'inactive':'active'})));
+  await m.Enrollment.create([{student:pupils[0].id,class:noorani.id,academicYear:year.id,isPrimary:false},{student:pupils[2].id,class:grade.id,academicYear:year.id,status:'withdrawn'}]);
+  const params=new URLSearchParams({class:grade.id,academicYear:year.id,date:'2026-01-12'});
+  const roster=await request('/attendance/roster?'+params,undefined,teacher);
+  assert.equal(roster.status,200);assert.equal(roster.total,1);assert.equal(roster.items[0].student,pupils[0].id);
+  assert.equal((await request('/attendance/roster?'+params,undefined,accountant)).status,403);
+  assert.equal((await request('/attendance/roster?'+params,undefined,learner)).status,403);
+  const body={class:grade.id,academicYear:year.id,date:'2026-01-12',records:[{student:pupils[0].id,status:'absent',remark:'Family called'}]};
+  assert.equal((await request('/attendance/bulk',body,teacher)).status,200);
+  assert.equal((await request('/attendance/bulk',{...body,records:[{student:pupils[0].id,status:'late'}]},teacher)).status,200);
+  assert.equal(await m.Attendance.countDocuments({student:pupils[0].id,class:grade.id}),1);
+  const loaded=await request('/attendance/roster?'+params,undefined,teacher);
+  assert.equal(loaded.items[0].status,'late');
+  for(const pupil of pupils.slice(1))assert.equal((await request('/attendance/bulk',{...body,records:[{student:pupil.id,status:'present'}]},teacher)).status,400);
+  assert.equal((await request('/attendance/bulk',{...body,section:section.id},teacher)).status,400);
+  assert.equal((await request('/attendance/bulk',{...body,academicYear:otherYear.id},teacher)).status,400);
+  assert.equal((await request('/attendance/bulk',{...body,date:'2025-12-31'},teacher)).status,400);
+  assert.equal((await request('/attendance/bulk',{...body,date:'2099-01-01'},teacher)).status,400);
+  assert.equal((await request('/attendance/bulk',{...body,date:'2026-02-30'},teacher)).status,400);
+  assert.equal((await request('/attendance/roster?class=invalid&academicYear='+year.id+'&date=2026-01-12',undefined,teacher)).status,400);
+  const secondary=await request('/attendance/roster?'+new URLSearchParams({class:noorani.id,academicYear:year.id,date:body.date}),undefined,teacher);
+  assert.equal(secondary.total,1);
+  assert.equal((await request('/attendance/bulk',{...body,class:noorani.id,records:[{student:pupils[0].id,status:'present'}]},teacher)).status,200);
+  assert.equal(await m.Attendance.countDocuments({student:pupils[0].id}),2);
+  assert.equal((await request('/attendance/roster?'+params,undefined,teacher)).items[0].status,'late');
+  const record=await m.Attendance.findOne({student:pupils[0].id,class:grade.id});
+  assert.equal(record.section,null);assert.equal(String(record.academicYear),year.id);assert.equal(String(record.markedBy),teacher.id);
+});
+
 test('exams: validate every mark reference before bulk writes and retain entering staff', async () => {
   const mark = { student: student.id, subject: subject.id, marksObtained: 85, fullMarks: 100 };
   const invalid = await request('/exams/marks', { exam: exam.id, marks: [mark, { ...mark, student: new mongoose.Types.ObjectId().toString() }] }, teacher);

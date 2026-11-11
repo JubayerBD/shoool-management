@@ -459,7 +459,7 @@
     "markAll": "Mark all present",
     "save": "Save attendance",
     "saved": "Attendance saved",
-    "noStudents": "No students in this section",
+    "noStudents": "No active students match this class and academic year.",
     "chooseSectionDate": "Choose a section and date, then load the roster.",
     "roll": "Roll",
     "name": "Name",
@@ -467,8 +467,16 @@
     "myTitle": "My attendance",
     "percentage": "Attendance",
     "recent": "Recent records",
-    "total": "Total days",
-    "noRecords": "No attendance records yet"
+    "total": "Attendance records",
+    "noRecords": "No attendance records yet",
+    "selectClass": "Select class",
+    "optionalSection": "Section (optional)",
+    "allSections": "All sections",
+    "noSection": "Whole class",
+    "chooseClassDate": "Choose an academic year, class and date, then load the roster. Section is optional.",
+    "studentCount": "Students: {{count}}",
+    "setupError": "Unable to load attendance setup",
+    "rosterError": "Unable to load students"
   },
   "teachers": {
     "add": "Add teacher",

@@ -25,6 +25,8 @@ export default function Attendance() {
   const { push } = useToast();
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
 
+  const [years, setYears] = useState([]), [classes, setClasses] = useState([]);
+  const [year, setYear] = useState(''), [grade, setGrade] = useState('');
   const [sections, setSections] = useState([]);
   const [section, setSection] = useState('');
   const [date, setDate] = useState(today());
@@ -34,37 +36,24 @@ export default function Attendance() {
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const id = item => String(item?.id || item?._id || item || '');
+  const availableClasses = classes.filter(item => !item.academicYear || id(item.academicYear) === year);
+  const availableSections = sections.filter(item => id(item.class) === grade);
+  const reset = () => { setLoaded(false); setRoster([]); };
   useEffect(() => {
-    getAll('/academics/sections').then((r) => setSections(r.data.items)).catch(() => push('Error loading sections', 'error'));
+    Promise.all([getAll('/academics/academic-years'), getAll('/academics/classes'), getAll('/academics/sections')])
+      .then(([y,c,s]) => { setYears(y.data.items); setClasses(c.data.items); setSections(s.data.items); setYear(id(y.data.items.find(item => item.isCurrent) || y.data.items[0])); })
+      .catch(() => push(t('attendance.setupError'), 'error'));
   }, []);
 
   const loadRoster = async () => {
-    if (!section) return;
-    setLoading(true);
-    setLoaded(false);
+    if (!grade || !year || !date) return;
+    setLoading(true); setLoaded(false);
     try {
-      const [studentsRes, attendanceRes] = await Promise.all([
-        getAll('/people/students', { params: { section, status: 'active' } }),
-        getAll('/attendance', { params: { section, from: date, to: date } }),
-      ]);
-      // Map existing attendance by student id.
-      const existing = {};
-      for (const a of attendanceRes.data.items) {
-        existing[a.student?.id || a.student?._id || a.student] = a.status;
-      }
-      const rows = studentsRes.data.items.map((s) => ({
-        student: s.id || s._id,
-        roll: s.roll,
-        name: s.name,
-        status: existing[s.id || s._id] || 'present',
-      }));
-      setRoster(rows);
-      setLoaded(true);
-    } catch {
-      push('Error loading roster', 'error');
-    } finally {
-      setLoading(false);
-    }
+      const response = await api.get('/attendance/roster', { params: { class: grade, academicYear: year, date, ...(section ? { section } : {}) } });
+      setRoster(response.data.items); setLoaded(true);
+    } catch (err) { push(err.response?.data?.error?.message || t('attendance.rosterError'), 'error'); }
+    finally { setLoading(false); }
   };
 
   const setStatus = (studentId, status) =>
@@ -83,9 +72,11 @@ export default function Attendance() {
     setSaving(true);
     try {
       await api.post('/attendance/bulk', {
-        section,
+        class: grade,
+        academicYear: year,
+        ...(section ? { section } : {}),
         date,
-        records: roster.map((r) => ({ student: r.student, status: r.status })),
+        records: roster.map((r) => ({ student: r.student, status: r.status, remark: r.remark || '' })),
       });
       push(t('attendance.saved'));
     } catch (err) {
@@ -101,24 +92,33 @@ export default function Attendance() {
 
       {/* Controls */}
       <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-4 shadow-sm">
-        <div className="w-56">
-          <label className="mb-1 block text-sm font-medium text-slate-700">
-            {t('students.section')}
-          </label>
-          <Select value={section} onChange={(e) => { setSection(e.target.value); setLoaded(false); setRoster([]); }}>
-            <option value="">{t('attendance.selectSection')}</option>
-            {sections.map((s) => (
-              <option key={s.id || s._id} value={s.id || s._id}>
-                {bt(s.class?.name, lang)} — {bt(s.name, lang)}
-              </option>
-            ))}
+        <div className="w-full sm:w-44">
+          <label htmlFor="attendance-year" className="mb-1 block text-sm font-medium text-slate-700">{t('academics.year')}</label>
+          <Select id="attendance-year" disabled={loading || saving} value={year} onChange={e => { setYear(e.target.value); setGrade(''); setSection(''); reset(); }}>
+            <option value="">{t('academics.selectYear')}</option>
+            {years.map(item => <option key={id(item)} value={id(item)}>{bt(item.name, lang)}</option>)}
+          </Select>
+        </div>
+        <div className="w-full sm:w-44">
+          <label htmlFor="attendance-class" className="mb-1 block text-sm font-medium text-slate-700">{t('academics.class')}</label>
+          <Select id="attendance-class" disabled={!year || loading || saving} value={grade} onChange={e => { setGrade(e.target.value); setSection(''); reset(); }}>
+            <option value="">{t('attendance.selectClass')}</option>
+            {availableClasses.map(item => <option key={id(item)} value={id(item)}>{bt(item.name, lang)}</option>)}
+          </Select>
+        </div>
+        <div className="w-full sm:w-48">
+          <label htmlFor="attendance-section" className="mb-1 block text-sm font-medium text-slate-700">{t('attendance.optionalSection')}</label>
+          <Select id="attendance-section" disabled={!grade || !availableSections.length || loading || saving} value={section} onChange={e => { setSection(e.target.value); reset(); }}>
+            <option value="">{t(availableSections.length ? 'attendance.allSections' : 'attendance.noSection')}</option>
+            {availableSections.map(item => <option key={id(item)} value={id(item)}>{bt(item.name, lang)}</option>)}
           </Select>
         </div>
         <div className="w-44">
-          <label className="mb-1 block text-sm font-medium text-slate-700">
+          <label htmlFor="attendance-date" className="mb-1 block text-sm font-medium text-slate-700">
             {t('attendance.date')}
           </label>
           <input
+            id="attendance-date" disabled={loading || saving}
             type="date"
             value={date}
             max={today()}
@@ -129,7 +129,7 @@ export default function Attendance() {
         <button
           type="button"
           onClick={loadRoster}
-          disabled={!section || loading}
+          disabled={!grade || !year || !date || loading || saving}
           className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
         >
           {loading ? t('common.loading') : t('attendance.load')}
@@ -138,7 +138,7 @@ export default function Attendance() {
 
       {!loaded && !loading && (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-          {t('attendance.chooseSectionDate')}
+          {t('attendance.chooseClassDate')}
         </div>
       )}
 
@@ -146,12 +146,12 @@ export default function Attendance() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-slate-600">
-              {t('attendance.summary', summary)}
+              <span className="mr-3 font-semibold">{t('attendance.studentCount', { count: roster.length })}</span>{t('attendance.summary', summary)}
             </div>
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={markAllPresent}
+                disabled={saving} onClick={markAllPresent}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
               >
                 {t('attendance.markAll')}
@@ -172,8 +172,8 @@ export default function Attendance() {
               {t('attendance.noStudents')}
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl bg-white shadow-sm">
-              <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto rounded-xl bg-white shadow-sm">
+              <table className="w-full min-w-[560px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="w-16 px-4 py-3">{t('attendance.roll')}</th>
@@ -185,14 +185,14 @@ export default function Attendance() {
                   {roster.map((r) => (
                     <tr key={r.student} className="hover:bg-slate-50">
                       <td className="px-4 py-2.5 text-slate-500">{r.roll ?? '—'}</td>
-                      <td className="px-4 py-2.5 font-medium text-slate-800">{bt(r.name, lang)}</td>
+                      <td className="px-4 py-2.5 font-medium text-slate-800">{bt(r.name, lang)}<span className="mt-1 block text-xs font-normal text-slate-500">{r.admissionNo}</span></td>
                       <td className="px-4 py-2.5">
                         <div className="flex justify-end gap-1">
                           {STATUSES.map((s) => (
                             <button
                               type="button"
                               key={s}
-                              onClick={() => setStatus(r.student, s)}
+                              disabled={saving} aria-pressed={r.status === s} onClick={() => setStatus(r.student, s)}
                               className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
                                 r.status === s
                                   ? statusStyle[s]

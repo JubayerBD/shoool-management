@@ -6,7 +6,9 @@ const { Schema } = mongoose;
 const attendanceSchema = new Schema(
   {
     student: { type: Schema.Types.ObjectId, ref: 'Student', required: true, index: true },
-    section: { type: Schema.Types.ObjectId, ref: 'Section', required: true, index: true },
+    class: { type: Schema.Types.ObjectId, ref: 'Class', index: true },
+    academicYear: { type: Schema.Types.ObjectId, ref: 'AcademicYear', index: true },
+    section: { type: Schema.Types.ObjectId, ref: 'Section', index: true },
     date: { type: Date, required: true, index: true },
     status: {
       type: String,
@@ -19,7 +21,7 @@ const attendanceSchema = new Schema(
   baseSchemaOptions
 );
 
-// One attendance record per student per day.
-attendanceSchema.index({ student: 1, date: 1 }, { unique: true });
+// Separate attendance for simultaneous classes, such as regular and Noorani.
+attendanceSchema.index({ student: 1, class: 1, date: 1 }, { unique: true });
 
 export const Attendance = mongoose.model('Attendance', attendanceSchema);
