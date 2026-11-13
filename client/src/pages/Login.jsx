@@ -8,8 +8,8 @@ export default function Login() {
   const { t } = useTranslation();
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('admin@school.test');
-  const [password, setPassword] = useState('admin1234');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -20,8 +20,9 @@ export default function Login() {
     try {
       await login(email, password);
       navigate('/');
-    } catch {
-      setError(t('auth.invalid'));
+    } catch (err) {
+      // 429 = too many wrong attempts; say so instead of "invalid password".
+      setError(err.response?.status === 429 ? t('auth.tooManyAttempts') : t('auth.invalid'));
     } finally {
       setBusy(false);
     }
@@ -50,6 +51,7 @@ export default function Login() {
               </label>
               <input
                 type="email"
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -62,6 +64,7 @@ export default function Login() {
               </label>
               <input
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required

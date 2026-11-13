@@ -265,6 +265,14 @@ test('attendance works without sections, validates enrollment and keeps simultan
   assert.equal(await m.Attendance.countDocuments({student:pupils[0].id,class:grade.id}),1);
   const loaded=await request('/attendance/roster?'+params,undefined,teacher);
   assert.equal(loaded.items[0].status,'late');
+  assert.equal(roster.marked,false);assert.equal(loaded.marked,true);
+  const report=await request('/attendance/report?'+new URLSearchParams({class:grade.id,academicYear:year.id,month:'2026-01'}),undefined,teacher);
+  assert.equal(report.status,200);assert.equal(report.students.length,1);
+  assert.deepEqual(report.students[0].days,{'2026-01-12':'late'});
+  assert.equal(report.students[0].percentage,100);assert.deepEqual(report.daily.map(day=>[day.date,day.late,day.present,day.total]),[['2026-01-12',1,0,1]]);
+  assert.equal((await request('/attendance/report?'+new URLSearchParams({class:grade.id,academicYear:year.id,month:'2026-02'}),undefined,teacher)).daily.length,0);
+  assert.equal((await request('/attendance/report?'+new URLSearchParams({class:grade.id,academicYear:year.id,month:'2026-13'}),undefined,teacher)).status,400);
+  assert.equal((await request('/attendance/report?'+new URLSearchParams({class:grade.id,academicYear:year.id,month:'2026-01'}),undefined,learner)).status,403);
   for(const pupil of pupils.slice(1))assert.equal((await request('/attendance/bulk',{...body,records:[{student:pupil.id,status:'present'}]},teacher)).status,400);
   assert.equal((await request('/attendance/bulk',{...body,section:section.id},teacher)).status,400);
   assert.equal((await request('/attendance/bulk',{...body,academicYear:otherYear.id},teacher)).status,400);
@@ -291,6 +299,18 @@ test('exams: validate every mark reference before bulk writes and retain enterin
   const report = await request(`/exams/report-card?exam=${exam.id}&student=${student.id}`);
   assert.equal(report.reportCard.result, 'Pass'); assert.equal(report.reportCard.gpa, 5);
   assert.equal((await request(`/exams/tabulation?exam=${exam.id}&section=${new mongoose.Types.ObjectId()}`)).status, 404);
+  // Section is optional everywhere: a class alone loads the whole class.
+  const wholeClass = await request(`/exams/roster?exam=${exam.id}&class=${klass.id}`, undefined, teacher);
+  assert.equal(wholeClass.status, 200); assert.ok(wholeClass.items.some((row) => row.student === student.id));
+  const oneSection = await request(`/exams/roster?exam=${exam.id}&class=${klass.id}&section=${section.id}`, undefined, teacher);
+  assert.ok(oneSection.total <= wholeClass.total);
+  const sheet = await request(`/exams/tabulation?exam=${exam.id}&class=${klass.id}`, undefined, teacher);
+  assert.equal(sheet.status, 200); assert.equal(sheet.rows.find((row) => row.student.id === student.id).totalObtained, 85);
+  const cards = await request(`/exams/report-cards?exam=${exam.id}&class=${klass.id}`, undefined, teacher);
+  assert.equal(cards.cards.find((card) => String(card.student._id) === student.id).result, 'Pass');
+  assert.equal((await request(`/exams/tabulation?exam=${exam.id}`, undefined, teacher)).status, 400);
+  assert.equal((await request(`/exams/roster?class=${klass.id}`, undefined, accountant)).status, 403);
+  assert.equal((await request(`/exams/roster?class=${klass.id}`, undefined, learner)).status, 403);
 });
 
 test('notices: attribute author correctly and do not reveal scheduled notices before publication', async () => {

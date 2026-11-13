@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { apiError } from '../../utils/apiError.js';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
 import { useToast } from './Toast.jsx';
@@ -53,7 +54,7 @@ export default function ProfileAccountSection({ role, profileId, profileName }) 
       setPassword('');
       push(t('accounts.accountCreated'));
     } catch (err) {
-      push(err.response?.data?.error?.message || 'Error', 'error');
+      push(apiError(err), 'error');
     } finally {
       setBusy(false);
     }
@@ -67,7 +68,7 @@ export default function ProfileAccountSection({ role, profileId, profileName }) 
       setPassword('');
       push(t('accounts.passwordReset'));
     } catch (err) {
-      push(err.response?.data?.error?.message || 'Error', 'error');
+      push(apiError(err), 'error');
     } finally {
       setBusy(false);
     }
@@ -114,7 +115,7 @@ export default function ProfileAccountSection({ role, profileId, profileName }) 
             <button
               type="button"
               onClick={createAccount}
-              disabled={busy || !email || password.length < 6}
+              disabled={busy || !email || password.length < 8}
               className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
             >
               {busy ? t('common.saving') : t('common.save')}
@@ -165,7 +166,7 @@ export default function ProfileAccountSection({ role, profileId, profileName }) 
               <button
                 type="button"
                 onClick={resetPassword}
-                disabled={busy || password.length < 6}
+                disabled={busy || password.length < 8}
                 className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
               >
                 {busy ? t('common.saving') : t('common.save')}

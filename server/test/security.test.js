@@ -126,10 +126,11 @@ test('academic data is validated and protected from deletion while in use', asyn
   assert.equal((await request(`/people/students/${own.id}`, admin, undefined, 'DELETE')).status, 409);
 });
 
-test('list queries ignore operator injection and unsafe sort values', async () => {
-  const injected = await request('/people/students?status[$ne]=active&limit=200', admin);
-  assert.equal(injected.status, 200);
-  assert.ok(injected.items.every((item) => item.status === 'active'));
+test('query strings cannot smuggle database operators and unsafe sort values are ignored', async () => {
+  for (const path of ['/people/students?status[$ne]=active&limit=200', '/attendance?section[$ne]=x', `/exams/marks?exam[$gt]=`, '/users?role[$in][]=admin', '/finance/incomes?category[$exists]=true']) {
+    assert.equal((await request(path, admin)).status, 400, path);
+  }
+  assert.equal((await request('/people/students?status=active&limit=200', admin)).status, 200);
   assert.ok((await request('/people/students?sort=%24where', admin)).status < 500);
 });
 
@@ -206,4 +207,50 @@ test('login is rate limited, uploads reject non-images, and responses carry secu
   const saved = await upload(png, 'image/png', 'photo.html');
   assert.equal(saved.status, 201);
   assert.match((await saved.json()).url, /\.png$/);
+});
+
+test('responses carry a content security policy and API data is never cached', async () => {
+  const health = await fetch(`${base}/health`);
+  const policy = health.headers.get('content-security-policy');
+  assert.match(policy, /default-src 'self'/); assert.match(policy, /script-src 'self'(;|$)/); assert.match(policy, /frame-ancestors 'self'/);
+  const me = await fetch(`${base}/auth/me`, { headers: { Authorization: `Bearer ${signToken({ sub: admin.id })}` } });
+  assert.equal(me.status, 200); assert.equal(me.headers.get('cache-control'), 'no-store');
+});
+
+test('new passwords must be strong; users change their own password and old sessions end', async () => {
+  const account = (password, n) => ({ name: { en: 'Policy' }, email: `policy-${n}@test.local`, role: 'teacher', password });
+  for (const [n, weak] of ['short1', 'admin1234', 'Password123', 'aaaaaaaa', '12345678'].entries()) {
+    assert.equal((await request('/users', admin, account(weak, n))).status, 400, weak);
+  }
+  const created = await request('/users', admin, account('River-Stone-42', 'ok'));
+  assert.equal(created.status, 201);
+  assert.equal((await request(`/users/${created.item.id}/password`, admin, { password: 'teacher1234' })).status, 400);
+
+  const login = await request('/auth/login', null, { email: 'policy-ok@test.local', password: 'River-Stone-42' });
+  assert.equal(login.status, 200);
+  const as = (token, path, body) => fetch(base + path, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  assert.equal((await as(login.token, '/auth/password', { currentPassword: 'wrong-guess', newPassword: 'Maple-Bridge-77' })).status, 400);
+  assert.equal((await as(login.token, '/auth/password', { currentPassword: 'River-Stone-42', newPassword: 'admin1234' })).status, 400);
+  assert.equal((await as(login.token, '/auth/password', { currentPassword: 'River-Stone-42', newPassword: 'River-Stone-42' })).status, 400);
+  const changed = await as(login.token, '/auth/password', { currentPassword: 'River-Stone-42', newPassword: 'Maple-Bridge-77' });
+  assert.equal(changed.status, 200);
+  const fresh = (await changed.json()).token;
+  assert.equal((await as(login.token, '/auth/me')).status, 401, 'the old session must end');
+  assert.equal((await as(fresh, '/auth/me')).status, 200);
+  assert.equal((await request('/auth/login', null, { email: 'policy-ok@test.local', password: 'River-Stone-42' })).status, 401);
+  assert.equal((await request('/auth/login', null, { email: 'policy-ok@test.local', password: 'Maple-Bridge-77' })).status, 200);
+  assert.equal((await fetch(`${base}/auth/password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword: 'a', newPassword: 'Maple-Bridge-78' }) })).status, 401);
+
+  // Five wrong guesses at the current password lock the form for a while.
+  let last;
+  for (let i = 0; i < 6; i += 1) last = await as(fresh, '/auth/password', { currentPassword: `guess-${i}`, newPassword: 'Cedar-Lantern-19' });
+  assert.equal(last.status, 429);
+});
+
+// Keep this test last: it deliberately exhausts the login allowance for the test machine's address.
+test('guessing passwords across many different accounts from one address is blocked', async () => {
+  let last;
+  for (let i = 0; i < 45; i += 1) last = await request('/auth/login', null, { email: `spray-${i}@test.local`, password: 'guess-guess' });
+  assert.equal(last.status, 429);
+  assert.equal((await request('/auth/login', null, { email: 'never-tried@test.local', password: 'guess-guess' })).status, 429);
 });

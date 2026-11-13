@@ -70,21 +70,21 @@ function OneCard({ card, examName, schoolName, lang, t }) {
   );
 }
 
-export default function BatchReportCards({ open, onClose, exam, section, examName }) {
+export default function BatchReportCards({ open, onClose, exam, klass, section, examName }) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
   const [cards, setCards] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!open || !exam || !section) return;
+    if (!open || !exam || !klass) return;
     setLoading(true);
     api
-      .get('/exams/report-cards', { params: { exam, section } })
+      .get('/exams/report-cards', { params: { exam, class: klass, ...(section ? { section } : {}) } })
       .then((r) => setCards(r.data.cards))
       .catch(() => setCards([]))
       .finally(() => setLoading(false));
-  }, [open, exam, section]);
+  }, [open, exam, klass, section]);
 
   return (
     <Modal

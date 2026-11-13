@@ -9,6 +9,17 @@ import { FeeStructure } from '../models/Fees.js';
 
 async function run() {
   await connectDB();
+  // The seed deletes users, students, teachers and classes. Never let it loose on real records.
+  const reset = process.argv.includes('--reset');
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[seed] Refusing to run with NODE_ENV=production: the seed erases existing records.');
+    process.exit(1);
+  }
+  if (!reset && (await User.estimatedDocumentCount()) > 0) {
+    console.error('[seed] This database already has accounts. The seed ERASES users, students, teachers and classes.');
+    console.error('[seed] To wipe a throwaway demo database anyway, run: npm run seed -- --reset');
+    process.exit(1);
+  }
   // eslint-disable-next-line no-console
   console.log('[seed] Clearing existing data...');
   await Promise.all([

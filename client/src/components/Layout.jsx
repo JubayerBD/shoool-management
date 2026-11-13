@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { navForRole } from '../config/nav.js';
 import { t as bt } from '../utils/bilingual.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
+import ChangePassword from './ChangePassword.jsx';
 
 export default function Layout() {
   const { t, i18n } = useTranslation();
@@ -12,6 +13,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
 
   const items = navForRole(user.role);
@@ -111,6 +113,16 @@ export default function Layout() {
             </div>
             <button
               type="button"
+              onClick={() => setPasswordOpen(true)}
+              title={t('auth.changePassword')}
+              aria-label={t('auth.changePassword')}
+              className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            >
+              <span aria-hidden="true">🔑</span>
+              <span className="ml-1 hidden lg:inline">{t('auth.changePassword')}</span>
+            </button>
+            <button
+              type="button"
               onClick={handleLogout}
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
             >
@@ -118,6 +130,8 @@ export default function Layout() {
             </button>
           </div>
         </header>
+
+        <ChangePassword open={passwordOpen} onClose={() => setPasswordOpen(false)} />
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <Outlet />

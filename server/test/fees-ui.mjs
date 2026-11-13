@@ -127,10 +127,13 @@ try {
   await page.getByLabel('Class', { exact: true }).selectOption(grade.id);
   await page.getByPlaceholder('Search student by name or admission number').fill('UI-1');
   await page.getByRole('row').filter({ hasText: 'Rafi Ahmed' }).getByRole('button', { name: 'View', exact: true }).click();
+  // Invoices now sit in a collapsed "All invoices" section under the fee calendar.
+  await page.locator('details[data-account-section] > summary').first().click();
   await page.getByRole('button', { name: 'View / receive payment', exact: true }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByText('Fee Invoice', { exact: true }).waitFor();
   await printPdf('invoice.pdf');
+  await dialog.getByLabel(/^Invoice No \(physical\)/).fill('PHY-0001');
   await dialog.locator('input[type=number]').fill('1000');
   await dialog.getByRole('button', { name: 'Record payment', exact: true }).click();
   await dialog.getByText('Money Receipt', { exact: true }).first().waitFor();
@@ -177,6 +180,7 @@ try {
   await dialog.getByRole('button', { name: 'Keep schedule' }).click();
   await page.getByRole('button', { name: 'Collect fees', exact: true }).click();
   await page.getByRole('row').filter({ hasText: 'Rafi Ahmed' }).getByRole('button', { name: 'View', exact: true }).click();
+  await page.locator('details[data-account-section] > summary').nth(1).click(); // payment history is collapsed by default
   await page.getByRole('button', { name: 'Correct payment', exact: true }).click();
   dialog = page.getByRole('dialog', { name: 'Correct payment', exact: true });
   await dialog.getByRole('spinbutton').fill('1100');
@@ -194,6 +198,7 @@ try {
   assert.equal((await Payment.findOne()).amount, 1100);
   await page.getByRole('button', { name: 'Collect fees', exact: true }).click();
   await page.getByRole('row').filter({ hasText: 'Rafi Ahmed' }).getByRole('button', { name: 'View', exact: true }).click();
+  await page.locator('details[data-account-section] > summary').nth(1).click();
   await page.getByRole('button', { name: 'REC-000001', exact: true }).click();
   await page.getByText(/Amount corrected from/).first().waitFor();
   await printPdf('corrected-receipt.pdf');

@@ -95,7 +95,42 @@ router.get('/roster', requireAuth, requireRole('admin', 'teacher'), async (req, 
   const students = await attendanceStudents(context);
   const saved = await Attendance.find({ class: context.grade.id, date: day, student: { $in: students.map(s => s._id) } }).lean();
   const byStudent = new Map(saved.map(row => [String(row.student), row]));
-  res.json({ items: students.map(student => ({ student: student._id, name: student.name, admissionNo: student.admissionNo, roll: student.roll, status: byStudent.get(String(student._id))?.status || 'present', remark: byStudent.get(String(student._id))?.remark || '' })), total: students.length });
+  // `marked` tells the screen whether this day was already saved or is still a fresh sheet.
+  res.json({ items: students.map(student => ({ student: student._id, name: student.name, admissionNo: student.admissionNo, roll: student.roll, status: byStudent.get(String(student._id))?.status || 'present', remark: byStudent.get(String(student._id))?.remark || '' })), total: students.length, marked: saved.length > 0 });
+});
+
+// Monthly register: one row per student, one column per day, plus per-day totals.
+router.get('/report', requireAuth, requireRole('admin', 'teacher'), async (req, res) => {
+  const parsed = z.object({ class: objectId, academicYear: objectId, section: objectId.optional(), month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/) }).safeParse(req.query);
+  if (!parsed.success) throw ApiError.badRequest('Choose an academic year, class and valid month');
+  const input = parsed.data;
+  const [y, mo] = input.month.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const from = `${input.month}-01`, to = `${input.month}-${String(lastDay).padStart(2, '0')}`;
+  const context = await attendanceContext({ ...input, date: undefined });
+  const roster = await attendanceStudents(context);
+  const filter = { class: context.grade.id, date: { $gte: dayStart(from), $lte: dayStart(to) } };
+  if (context.section) filter.section = context.section.id;
+  const records = await Attendance.find(filter).populate({ path: 'student', select: 'name admissionNo roll' }).lean();
+
+  const blank = () => ({ present: 0, absent: 0, late: 0, leave: 0 });
+  const rows = new Map(roster.map(s => [String(s._id), { student: s._id, name: s.name, admissionNo: s.admissionNo, roll: s.roll, days: {}, counts: blank() }]));
+  const daily = new Map();
+  for (const record of records) {
+    if (!record.student) continue; // Student was deleted; nothing meaningful to show.
+    const key = String(record.student._id), day = record.date.toISOString().slice(0, 10);
+    // Students who have since left the class still appear for the days they were marked.
+    if (!rows.has(key)) rows.set(key, { student: record.student._id, name: record.student.name, admissionNo: record.student.admissionNo, roll: record.student.roll, days: {}, counts: blank(), former: true });
+    const row = rows.get(key);
+    row.days[day] = record.status; row.counts[record.status] += 1;
+    if (!daily.has(day)) daily.set(day, { date: day, ...blank(), total: 0 });
+    const tally = daily.get(day); tally[record.status] += 1; tally.total += 1;
+  }
+  const students = [...rows.values()].map(row => {
+    const marked = row.counts.present + row.counts.absent + row.counts.late + row.counts.leave;
+    return { ...row, marked, percentage: marked ? Math.round(((row.counts.present + row.counts.late) / marked) * 100) : null };
+  });
+  res.json({ month: input.month, from, to, today: schoolDate(), students, daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)) });
 });
 
 // List attendance, filterable by section/student/date range.

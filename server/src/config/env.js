@@ -12,9 +12,19 @@ for (const key of required) {
   }
 }
 
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  // eslint-disable-next-line no-console
-  console.error('[env] SECURITY: JWT_SECRET is not set in production. Anyone can forge login tokens. Set a long random JWT_SECRET now.');
+// Known placeholder values: anyone who has seen this repository could forge login tokens with them.
+const PLACEHOLDER_SECRETS = ['dev_insecure_secret_change_me', 'change_this_to_a_long_random_secret'];
+if (process.env.NODE_ENV === 'production') {
+  const secret = process.env.JWT_SECRET || '';
+  if (!secret || PLACEHOLDER_SECRETS.includes(secret)) {
+    // eslint-disable-next-line no-console
+    console.error('[env] SECURITY: JWT_SECRET is missing or still a placeholder. Refusing to start in production: anyone could forge login tokens. Set a long random JWT_SECRET.');
+    process.exit(1);
+  }
+  if (secret.length < 32) {
+    // eslint-disable-next-line no-console
+    console.warn('[env] SECURITY: JWT_SECRET is shorter than 32 characters. Use a longer random value.');
+  }
 }
 
 export const env = {

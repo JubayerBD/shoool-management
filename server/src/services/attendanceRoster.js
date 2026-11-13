@@ -12,7 +12,7 @@ export async function attendanceContext(input) {
   const year = await AcademicYear.findById(input.academicYear || grade.academicYear);
   if (!year || (grade.academicYear && String(grade.academicYear) !== year.id)) throw ApiError.badRequest('Class does not belong to the selected academic year');
   const first = year.startDate.toISOString().slice(0, 10), last = year.endDate.toISOString().slice(0, 10);
-  if (input.date < first || input.date > last) throw ApiError.badRequest('Attendance date must fall within the academic year');
+  if (input.date !== undefined && (input.date < first || input.date > last)) throw ApiError.badRequest('Attendance date must fall within the academic year');
   return { grade, year, section };
 }
 

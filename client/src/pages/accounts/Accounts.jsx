@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { apiError } from '../../utils/apiError.js';
 import { useTranslation } from 'react-i18next';
 import api from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -73,7 +74,7 @@ export default function Accounts() {
       push(editing ? t('accounts.updated') : t('accounts.created'));
       load();
     } catch (err) {
-      push(err.response?.data?.error?.message || 'Error', 'error');
+      push(apiError(err), 'error');
     } finally {
       setSaving(false);
     }
@@ -85,7 +86,7 @@ export default function Accounts() {
       push(t('accounts.deleted'));
       load();
     } catch (err) {
-      push(err.response?.data?.error?.message || 'Error', 'error');
+      push(apiError(err), 'error');
     } finally {
       setDeleteId(null);
     }
@@ -99,7 +100,7 @@ export default function Accounts() {
       setPwUser(null);
       setPwValue('');
     } catch (err) {
-      push(err.response?.data?.error?.message || 'Error', 'error');
+      push(apiError(err), 'error');
     }
   };
 
@@ -272,7 +273,7 @@ export default function Accounts() {
               value={pwValue}
               onChange={(e) => setPwValue(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
             />
           </Field>
         </form>

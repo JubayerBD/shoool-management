@@ -49,6 +49,8 @@ export function errorHandler(err, _req, res, _next) {
   if (statusCode >= 500) {
     // eslint-disable-next-line no-console
     console.error('[error]', err);
+    // Internal details (driver messages, file paths) stay in the server log.
+    if (env.nodeEnv === 'production') { message = 'Something went wrong. Please try again.'; details = undefined; }
   }
 
   res.status(statusCode).json({

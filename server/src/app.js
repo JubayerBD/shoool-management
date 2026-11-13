@@ -7,7 +7,7 @@ import 'express-async-errors';
 
 import { env } from './config/env.js';
 import { notFoundHandler, errorHandler } from './middleware/error.js';
-import { securityHeaders, rejectUnsafePayload } from './middleware/security.js';
+import { securityHeaders, rejectUnsafePayload, apiLimiter } from './middleware/security.js';
 import { activityLogging } from './middleware/activity.js';
 
 import authRoutes from './modules/auth/auth.routes.js';
@@ -34,6 +34,7 @@ export function createApp() {
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // behind Render's proxy: real client IP + req.secure
   app.use(securityHeaders);
+  app.use(apiLimiter);
 
   // CORS: allow non-browser tools, whitelisted origins, and — importantly —
   // the app's own origin (same-origin requests when the API also serves the

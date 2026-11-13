@@ -40,7 +40,7 @@ export default function AccountFields({ value, onChange }) {
                 value={value.password}
                 onChange={(e) => set({ password: e.target.value })}
                 required
-                minLength={6}
+                minLength={8}
               />
             </Field>
           </div>

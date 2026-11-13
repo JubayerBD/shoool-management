@@ -6,6 +6,7 @@ import { useOwnStudent } from '../../hooks/useOwnStudent.js';
 import { useToast } from '../../components/ui/Toast.jsx';
 import { Select } from '../../components/ui/Field.jsx';
 import { t as bt } from '../../utils/bilingual.js';
+import ClassSectionSelects, { useClassSections, examYearId } from './ClassSectionSelects.jsx';
 
 const gradeColor = (grade) => {
   if (grade === 'F') return 'text-red-600';
@@ -24,10 +25,11 @@ export default function ReportCard() {
   const own = useOwnStudent();
 
   const [exams, setExams] = useState([]);
-  const [sections, setSections] = useState([]);
+  const { classes, sections } = useClassSections(!selfService);
   const [students, setStudents] = useState([]);
 
   const [exam, setExam] = useState('');
+  const [klass, setKlass] = useState('');
   const [section, setSection] = useState('');
   const [student, setStudent] = useState('');
 
@@ -36,9 +38,6 @@ export default function ReportCard() {
 
   useEffect(() => {
     api.get('/exams/exams', { params: { limit: 200 } }).then((r) => setExams(r.data.items));
-    if (!selfService) {
-      api.get('/academics/sections', { params: { limit: 500 } }).then((r) => setSections(r.data.items));
-    }
   }, [selfService]);
 
   // In self-service mode lock the student to the logged-in user's own student.
@@ -46,17 +45,18 @@ export default function ReportCard() {
     if (selfService && own.studentId) setStudent(own.studentId);
   }, [selfService, own.studentId]);
 
-  // Reload students when the section changes (staff picker only).
+  // Reload students when the class or section changes (staff picker only).
   useEffect(() => {
     if (selfService) return;
     setStudent('');
     setStudents([]);
     setCard(null);
-    if (!section) return;
+    if (!klass) return;
     api
-      .get('/people/students', { params: { section, limit: 200 } })
-      .then((r) => setStudents(r.data.items));
-  }, [section, selfService]);
+      .get('/exams/roster', { params: { class: klass, ...(section ? { section } : {}) } })
+      .then((r) => setStudents(r.data.items.map((s) => ({ ...s, id: s.student }))))
+      .catch(() => {});
+  }, [klass, section, selfService]);
 
   const selectedStudent = selfService
     ? own.student
@@ -100,28 +100,24 @@ export default function ReportCard() {
         </div>
         {!selfService && (
           <>
-            <div className="w-52">
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                {t('students.section')}
-              </label>
-              <Select value={section} onChange={(e) => setSection(e.target.value)}>
-                <option value="">{t('exams.selectSection')}</option>
-                {sections.map((s) => (
-                  <option key={s.id || s._id} value={s.id || s._id}>
-                    {bt(s.class?.name, lang)} — {bt(s.name, lang)}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            <ClassSectionSelects
+              classes={classes}
+              sections={sections}
+              klass={klass}
+              section={section}
+              yearId={examYearId(exams, exam)}
+              lang={lang}
+              onChange={(next) => { setKlass(next.klass); setSection(next.section); }}
+            />
             <div className="w-52">
               <label className="mb-1 block text-sm font-medium text-slate-700">
                 {t('students.title')}
               </label>
-              <Select value={student} onChange={(e) => setStudent(e.target.value)} disabled={!section}>
+              <Select value={student} onChange={(e) => setStudent(e.target.value)} disabled={!klass}>
                 <option value="">{t('exams.selectStudent')}</option>
                 {students.map((s) => (
                   <option key={s.id || s._id} value={s.id || s._id}>
-                    {bt(s.name, lang)}
+                    {s.roll != null ? `${s.roll}. ` : ''}{bt(s.name, lang)}
                   </option>
                 ))}
               </Select>

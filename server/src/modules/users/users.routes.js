@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate.js';
 import { User } from '../../models/User.js';
 import { ROLES } from '../../models/common.js';
 import { ApiError } from '../../utils/ApiError.js';
+import { newPassword } from '../../utils/passwordPolicy.js';
 
 const router = Router();
 const adminOnly = [requireAuth, requireRole('admin')];
@@ -19,7 +20,7 @@ const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
 const createSchema = z.object({
   name: bilingualName,
   email: z.string().email(),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: newPassword,
   role: z.enum(ROLES),
   phone: z.string().optional().default(''),
   isActive: z.boolean().optional().default(true),
@@ -39,7 +40,7 @@ const updateSchema = z.object({
   children: z.array(objectId).optional(),
 });
 
-const passwordSchema = z.object({ password: z.string().min(6) });
+const passwordSchema = z.object({ password: newPassword });
 
 /** Keep only the profile links that make sense for the role. */
 function linksForRole(role, src) {

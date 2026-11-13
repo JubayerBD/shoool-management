@@ -54,6 +54,10 @@ npm run dev               # http://localhost:5173
 - **Admin** — `admin@school.test` / `admin1234`
 - Teacher / Student / Parent / Accountant logins are printed by the seed script.
 
+> **These demo passwords are public.** Never keep them on a site other people can reach: sign in, create your own admin under **Accounts**, then delete `admin@school.test`. Every user can change their own password with the 🔑 button in the top bar.
+>
+> The seed **erases** users, students, teachers and classes. It refuses to run when accounts already exist (use `npm run seed -- --reset` on a throwaway database) or when `NODE_ENV=production`.
+
 ## Database options
 
 ### Option A — MongoDB Atlas (recommended for real/persistent use)

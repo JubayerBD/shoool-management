@@ -5,6 +5,7 @@ import { useToast } from '../../components/ui/Toast.jsx';
 import { Select } from '../../components/ui/Field.jsx';
 import { t as bt } from '../../utils/bilingual.js';
 import BatchReportCards from './BatchReportCards.jsx';
+import ClassSectionSelects, { useClassSections, examYearId } from './ClassSectionSelects.jsx';
 
 export default function ResultSheet() {
   const { t, i18n } = useTranslation();
@@ -12,8 +13,9 @@ export default function ResultSheet() {
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
 
   const [exams, setExams] = useState([]);
-  const [sections, setSections] = useState([]);
+  const { classes, sections } = useClassSections();
   const [exam, setExam] = useState('');
+  const [klass, setKlass] = useState('');
   const [section, setSection] = useState('');
   const [sheet, setSheet] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -21,7 +23,6 @@ export default function ResultSheet() {
 
   useEffect(() => {
     api.get('/exams/exams', { params: { limit: 200 } }).then((r) => setExams(r.data.items));
-    api.get('/academics/sections', { params: { limit: 500 } }).then((r) => setSections(r.data.items));
   }, []);
 
   const examName = useMemo(() => {
@@ -29,16 +30,18 @@ export default function ResultSheet() {
     return e ? bt(e.name, lang) : '';
   }, [exams, exam, lang]);
   const sectionName = useMemo(() => {
+    const k = classes.find((x) => (x.id || x._id) === klass);
     const s = sections.find((x) => (x.id || x._id) === section);
-    return s ? `${bt(s.class?.name, lang)} — ${bt(s.name, lang)}` : '';
-  }, [sections, section, lang]);
+    return [k && bt(k.name, lang), s && bt(s.name, lang)].filter(Boolean).join(' — ');
+  }, [classes, sections, klass, section, lang]);
+  const scope = { class: klass, ...(section ? { section } : {}) };
 
   const view = async () => {
-    if (!exam || !section) return;
+    if (!exam || !klass) return;
     setLoading(true);
     setSheet(null);
     try {
-      const res = await api.get('/exams/tabulation', { params: { exam, section } });
+      const res = await api.get('/exams/tabulation', { params: { exam, ...scope } });
       setSheet(res.data);
     } catch (err) {
       push(err.response?.data?.error?.message || 'Error', 'error');
@@ -52,7 +55,7 @@ export default function ResultSheet() {
       <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-4 shadow-sm no-print">
         <div className="w-52">
           <label className="mb-1 block text-sm font-medium text-slate-700">{t('exams.tabs.terms')}</label>
-          <Select value={exam} onChange={(e) => setExam(e.target.value)}>
+          <Select value={exam} onChange={(e) => { setExam(e.target.value); setSheet(null); }}>
             <option value="">{t('exams.selectExam')}</option>
             {exams.map((x) => (
               <option key={x.id || x._id} value={x.id || x._id}>
@@ -61,21 +64,19 @@ export default function ResultSheet() {
             ))}
           </Select>
         </div>
-        <div className="w-52">
-          <label className="mb-1 block text-sm font-medium text-slate-700">{t('students.section')}</label>
-          <Select value={section} onChange={(e) => setSection(e.target.value)}>
-            <option value="">{t('exams.selectSection')}</option>
-            {sections.map((s) => (
-              <option key={s.id || s._id} value={s.id || s._id}>
-                {bt(s.class?.name, lang)} — {bt(s.name, lang)}
-              </option>
-            ))}
-          </Select>
-        </div>
+        <ClassSectionSelects
+          classes={classes}
+          sections={sections}
+          klass={klass}
+          section={section}
+          yearId={examYearId(exams, exam)}
+          lang={lang}
+          onChange={(next) => { setKlass(next.klass); setSection(next.section); setSheet(null); }}
+        />
         <button
           type="button"
           onClick={view}
-          disabled={!exam || !section || loading}
+          disabled={!exam || !klass || loading}
           className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
         >
           {loading ? t('common.loading') : t('exams.view')}
@@ -104,6 +105,7 @@ export default function ResultSheet() {
         open={batchOpen}
         onClose={() => setBatchOpen(false)}
         exam={exam}
+        klass={klass}
         section={section}
         examName={examName}
       />

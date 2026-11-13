@@ -3,6 +3,8 @@ import { User } from '../../models/User.js';
 import { signToken } from '../../utils/jwt.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { ROLES } from '../../models/common.js';
+import { newPassword } from '../../utils/passwordPolicy.js';
+import bcrypt from 'bcryptjs';
 
 const bilingualName = z.object({
   en: z.string().min(1, 'English name is required'),
@@ -12,15 +14,23 @@ const bilingualName = z.object({
 export const registerSchema = z.object({
   name: bilingualName,
   email: z.string().email(),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: newPassword,
   role: z.enum(ROLES),
   phone: z.string().optional(),
 });
 
 export const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
+  email: z.string().email().max(254),
+  password: z.string().min(1).max(200),
 });
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword,
+});
+
+// Compared against when the account does not exist, so response time does not reveal which emails are registered.
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
 
 function publicUser(user) {
   return {
@@ -51,8 +61,11 @@ export async function register(req, res) {
 
 export async function login(req, res) {
   const { email, password } = req.body;
-  const user = await User.findOne({ email }).select('+passwordHash');
-  if (!user || !user.isActive) throw ApiError.unauthorized('Invalid credentials');
+  const user = await User.findOne({ email: email.trim().toLowerCase() }).select('+passwordHash');
+  if (!user || !user.isActive) {
+    await bcrypt.compare(password, DUMMY_HASH);
+    throw ApiError.unauthorized('Invalid credentials');
+  }
 
   const ok = await user.verifyPassword(password);
   if (!ok) throw ApiError.unauthorized('Invalid credentials');
@@ -63,6 +76,22 @@ export async function login(req, res) {
   const token = signToken({ sub: user.id, role: user.role, sessionVersion: user.sessionVersion || 0 });
   req.user = user; // Attribute the login event without logging credentials.
   res.json({ token, user: publicUser(user) });
+}
+
+/** Any signed-in user changes their own password; every other session is signed out. */
+export async function changePassword(req, res) {
+  const { currentPassword, newPassword: next } = req.body;
+  const user = await User.findById(req.user.id).select('+passwordHash');
+  if (!user || !(await user.verifyPassword(currentPassword))) {
+    res.locals.wrongCurrentPassword = true;
+    throw ApiError.badRequest('Current password is incorrect');
+  }
+  if (next === currentPassword) throw ApiError.badRequest('New password must be different from the current password');
+  if (next.toLowerCase() === user.email) throw ApiError.badRequest('Password must not be your email address');
+  await user.setPassword(next); // bumps sessionVersion: older tokens stop working
+  await user.save();
+  const token = signToken({ sub: user.id, role: user.role, sessionVersion: user.sessionVersion || 0 });
+  res.json({ ok: true, token });
 }
 
 export async function me(req, res) {

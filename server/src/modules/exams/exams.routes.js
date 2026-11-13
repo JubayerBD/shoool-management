@@ -5,7 +5,8 @@ import { validate } from '../../middleware/validate.js';
 import { crudController } from '../../utils/crudController.js';
 import { Exam, Mark } from '../../models/Exam.js';
 import { Student } from '../../models/People.js';
-import { Section, Subject } from '../../models/Academic.js';
+import { Class, Section, Subject } from '../../models/Academic.js';
+import { Enrollment } from '../../models/Enrollment.js';
 import { gradeFromMarks } from '../../utils/grading.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { blockIfInUse } from '../../utils/inUse.js';
@@ -14,6 +15,48 @@ import { assertStudentAccess, isSelfService, ownStudentIds, requireAcademicAcces
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
 
 const router = Router();
+
+/**
+ * Students of one class for the exam screens. Section is optional: without it the whole
+ * class is returned. Includes students attending the class as an additional enrollment,
+ * and keeps anyone who already has marks in the exam even if they have since left.
+ */
+async function classRoster({ exam, class: classId, section }) {
+  for (const value of [exam, classId, section]) {
+    if (value && !objectId.safeParse(value).success) throw ApiError.badRequest('Invalid id');
+  }
+  if (!classId && !section) throw ApiError.badRequest('Choose a class');
+  const sectionDoc = section ? await Section.findById(section).lean() : null;
+  const examDoc = exam ? await Exam.findById(exam).lean() : null;
+  if ((section && !sectionDoc) || (exam && !examDoc)) throw ApiError.notFound('Exam or section not found');
+  const grade = await Class.findById(classId || sectionDoc.class).lean();
+  if (!grade) throw ApiError.notFound('Class not found');
+  if (sectionDoc && String(sectionDoc.class) !== String(grade._id)) throw ApiError.badRequest('Section does not belong to the selected class');
+
+  const yearId = examDoc?.academicYear || grade.academicYear || null;
+  const memberships = await Enrollment.find({ class: grade._id, ...(yearId ? { academicYear: yearId } : {}) }).lean();
+  const byStudent = new Map(memberships.map((record) => [String(record.student), record]));
+  const candidates = await Student.find({ $or: [{ class: grade._id }, { _id: { $in: memberships.map((record) => record.student) } }] })
+    .select('name admissionNo roll class section academicYear status')
+    .lean();
+  const marked = exam
+    ? new Set((await Mark.distinct('student', { exam, student: { $in: candidates.map((s) => s._id) } })).map(String))
+    : new Set();
+
+  const students = candidates.flatMap((s) => {
+    const id = String(s._id);
+    const membership = byStudent.get(id);
+    const primary = String(s.class) === String(grade._id) && (!yearId || !s.academicYear || String(s.academicYear) === String(yearId));
+    if (!membership && !primary) return [];
+    const current = s.status === 'active' && membership?.status !== 'withdrawn';
+    if (!current && !marked.has(id)) return [];
+    const assignedSection = membership ? membership.section : s.section;
+    if (sectionDoc && String(assignedSection) !== String(sectionDoc._id)) return [];
+    return [{ _id: s._id, name: s.name, admissionNo: s.admissionNo, roll: membership?.roll ?? s.roll }];
+  });
+  students.sort((a, b) => (a.roll ?? Infinity) - (b.roll ?? Infinity) || String(a.admissionNo).localeCompare(String(b.admissionNo)));
+  return { students, grade };
+}
 
 /* ---- Exam terms (admin-managed) ---- */
 const exams = crudController(Exam, {
@@ -70,13 +113,18 @@ router.post(
     if (!examDoc) throw ApiError.badRequest('Exam not found');
     const students = await Student.find({ _id: { $in: marks.map((m) => m.student) } }).lean();
     const subjects = await Subject.find({ _id: { $in: marks.map((m) => m.subject) } }).lean();
+    const enrollments = await Enrollment.find({ student: { $in: students.map((s) => s._id) }, status: { $ne: 'withdrawn' } }).lean();
+    const attends = (student, classId) => String(student.class) === String(classId)
+      || enrollments.some((e) => String(e.student) === String(student._id) && String(e.class) === String(classId));
     const seen = new Set();
     for (const mark of marks) {
       const student = students.find((s) => String(s._id) === mark.student);
       const subject = subjects.find((s) => String(s._id) === mark.subject);
       if (!student || !subject) throw ApiError.badRequest('Every mark must reference an existing student and subject');
-      if (subject.class && String(subject.class) !== String(student.class)) throw ApiError.badRequest('Subject must belong to the student’s class');
-      if (examDoc.academicYear && student.academicYear && String(examDoc.academicYear) !== String(student.academicYear)) throw ApiError.badRequest('Exam and student must belong to the same academic year');
+      if (subject.class && !attends(student, subject.class)) throw ApiError.badRequest('Subject must belong to the student’s class');
+      const inExamYear = !examDoc.academicYear || !student.academicYear || String(examDoc.academicYear) === String(student.academicYear)
+        || enrollments.some((e) => String(e.student) === String(student._id) && String(e.academicYear) === String(examDoc.academicYear));
+      if (!inExamYear) throw ApiError.badRequest('Exam and student must belong to the same academic year');
       const key = `${mark.student}-${mark.subject}`;
       if (seen.has(key)) throw ApiError.badRequest('A student and subject can appear only once in a marks batch');
       seen.add(key);
@@ -128,21 +176,18 @@ router.get('/marks', requireAuth, async (req, res) => {
   res.json({ items });
 });
 
-/* ---- Tabulation: whole section across one exam (marks grid + rank) ---- */
+/* ---- Class list for mark entry and the report-card student picker ---- */
+router.get('/roster', requireAuth, requireRole('admin', 'teacher'), async (req, res) => {
+  const { students } = await classRoster(req.query);
+  res.json({ items: students.map((s) => ({ student: s._id, name: s.name, admissionNo: s.admissionNo, roll: s.roll })), total: students.length });
+});
+
+/* ---- Tabulation: whole class (or one section) across one exam (marks grid + rank) ---- */
 router.get('/tabulation', requireAuth, requireRole('admin', 'teacher'), async (req, res) => {
-  const { exam, section } = req.query;
-  if (!exam || !section) throw ApiError.badRequest('exam and section are required');
-
-  const sectionDoc = await Section.findById(section).lean();
-  if (!sectionDoc || !await Exam.exists({ _id: exam })) throw ApiError.notFound('Exam or section not found');
-  const classId = sectionDoc?.class;
-
-  const [students, subjects] = await Promise.all([
-    Student.find({ section }).sort({ roll: 1 }).select('name admissionNo roll').lean(),
-    Subject.find(classId ? { $or: [{ class: classId }, { class: null }] } : {})
-      .sort({ 'name.en': 1 })
-      .lean(),
-  ]);
+  const { exam } = req.query;
+  if (!exam) throw ApiError.badRequest('exam is required');
+  const { students, grade } = await classRoster(req.query);
+  const subjects = await Subject.find({ $or: [{ class: grade._id }, { class: null }] }).sort({ 'name.en': 1 }).lean();
 
   const studentIds = students.map((s) => s._id);
   const marks = await Mark.find({ exam, student: { $in: studentIds } }).lean();
@@ -203,16 +248,11 @@ router.get('/tabulation', requireAuth, requireRole('admin', 'teacher'), async (r
   });
 });
 
-/* ---- Batch report cards: every student in a section for one exam ---- */
+/* ---- Batch report cards: every student in a class (or one section) for one exam ---- */
 router.get('/report-cards', requireAuth, requireRole('admin', 'teacher'), async (req, res) => {
-  const { exam, section } = req.query;
-  if (!exam || !section) throw ApiError.badRequest('exam and section are required');
-  if (!await Section.exists({ _id: section }) || !await Exam.exists({ _id: exam })) throw ApiError.notFound('Exam or section not found');
-
-  const students = await Student.find({ section })
-    .sort({ roll: 1 })
-    .select('name admissionNo roll')
-    .lean();
+  const { exam } = req.query;
+  if (!exam) throw ApiError.badRequest('exam is required');
+  const { students } = await classRoster(req.query);
   const ids = students.map((s) => s._id);
   const marks = await Mark.find({ exam, student: { $in: ids } })
     .populate('subject', 'name code fullMarks')

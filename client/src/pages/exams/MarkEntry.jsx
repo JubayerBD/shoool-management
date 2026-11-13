@@ -4,6 +4,7 @@ import api from '../../api/client.js';
 import { useToast } from '../../components/ui/Toast.jsx';
 import { Select } from '../../components/ui/Field.jsx';
 import { t as bt } from '../../utils/bilingual.js';
+import ClassSectionSelects, { useClassSections, examYearId } from './ClassSectionSelects.jsx';
 
 export default function MarkEntry() {
   const { t, i18n } = useTranslation();
@@ -11,10 +12,11 @@ export default function MarkEntry() {
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
 
   const [exams, setExams] = useState([]);
-  const [sections, setSections] = useState([]);
+  const { classes, sections } = useClassSections();
   const [subjects, setSubjects] = useState([]);
 
   const [exam, setExam] = useState('');
+  const [klass, setKlass] = useState('');
   const [section, setSection] = useState('');
   const [subject, setSubject] = useState('');
 
@@ -25,35 +27,28 @@ export default function MarkEntry() {
 
   useEffect(() => {
     api.get('/exams/exams', { params: { limit: 200 } }).then((r) => setExams(r.data.items));
-    api.get('/academics/sections', { params: { limit: 500 } }).then((r) => setSections(r.data.items));
     api.get('/academics/subjects', { params: { limit: 500 } }).then((r) => setSubjects(r.data.items));
   }, []);
-
-  // The class of the chosen section, used to filter subjects.
-  const sectionClassId = useMemo(() => {
-    const s = sections.find((x) => (x.id || x._id) === section);
-    return s?.class?.id || s?.class?._id || s?.class || '';
-  }, [sections, section]);
 
   const subjectOptions = useMemo(
     () =>
       subjects.filter((s) => {
         const cls = s.class?.id || s.class?._id || s.class;
-        return !cls || cls === sectionClassId;
+        return !cls || cls === klass;
       }),
-    [subjects, sectionClassId]
+    [subjects, klass]
   );
 
   const selectedSubject = subjects.find((s) => (s.id || s._id) === subject);
   const fullMarks = selectedSubject?.fullMarks || 100;
 
   const load = async () => {
-    if (!exam || !section || !subject) return;
+    if (!exam || !klass || !subject) return;
     setLoading(true);
     setLoaded(false);
     try {
       const [studentsRes, marksRes] = await Promise.all([
-        api.get('/people/students', { params: { section, limit: 200 } }),
+        api.get('/exams/roster', { params: { exam, class: klass, ...(section ? { section } : {}) } }),
         api.get('/exams/marks', { params: { exam, subject } }),
       ]);
       const existing = {};
@@ -62,15 +57,16 @@ export default function MarkEntry() {
       }
       setRows(
         studentsRes.data.items.map((s) => ({
-          student: s.id || s._id,
+          student: s.student,
           roll: s.roll,
           name: s.name,
-          marksObtained: existing[s.id || s._id] ?? '',
+          admissionNo: s.admissionNo,
+          marksObtained: existing[s.student] ?? '',
         }))
       );
       setLoaded(true);
-    } catch {
-      push('Error loading students', 'error');
+    } catch (err) {
+      push(err.response?.data?.error?.message || t('attendance.rosterError'), 'error');
     } finally {
       setLoading(false);
     }
@@ -108,7 +104,7 @@ export default function MarkEntry() {
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t('exams.tabs.terms')}
           </label>
-          <Select value={exam} onChange={(e) => setExam(e.target.value)}>
+          <Select value={exam} onChange={(e) => { setExam(e.target.value); setLoaded(false); }}>
             <option value="">{t('exams.selectExam')}</option>
             {exams.map((x) => (
               <option key={x.id || x._id} value={x.id || x._id}>
@@ -117,30 +113,25 @@ export default function MarkEntry() {
             ))}
           </Select>
         </div>
-        <div className="w-52">
-          <label className="mb-1 block text-sm font-medium text-slate-700">
-            {t('students.section')}
-          </label>
-          <Select
-            value={section}
-            onChange={(e) => {
-              setSection(e.target.value);
-              setSubject('');
-            }}
-          >
-            <option value="">{t('exams.selectSection')}</option>
-            {sections.map((s) => (
-              <option key={s.id || s._id} value={s.id || s._id}>
-                {bt(s.class?.name, lang)} — {bt(s.name, lang)}
-              </option>
-            ))}
-          </Select>
-        </div>
+        <ClassSectionSelects
+          classes={classes}
+          sections={sections}
+          klass={klass}
+          section={section}
+          yearId={examYearId(exams, exam)}
+          lang={lang}
+          onChange={(next) => {
+            if (next.klass !== klass) setSubject('');
+            setKlass(next.klass);
+            setSection(next.section);
+            setLoaded(false);
+          }}
+        />
         <div className="w-52">
           <label className="mb-1 block text-sm font-medium text-slate-700">
             {t('exams.subject')}
           </label>
-          <Select value={subject} onChange={(e) => setSubject(e.target.value)} disabled={!section}>
+          <Select value={subject} onChange={(e) => { setSubject(e.target.value); setLoaded(false); }} disabled={!klass}>
             <option value="">{t('exams.selectSubject')}</option>
             {subjectOptions.map((s) => (
               <option key={s.id || s._id} value={s.id || s._id}>
@@ -152,7 +143,7 @@ export default function MarkEntry() {
         <button
           type="button"
           onClick={load}
-          disabled={!exam || !section || !subject || loading}
+          disabled={!exam || !klass || !subject || loading}
           className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
         >
           {loading ? t('common.loading') : t('exams.load')}
@@ -169,6 +160,7 @@ export default function MarkEntry() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="text-sm text-slate-600">
+              <span className="mr-3 font-semibold">{t('attendance.studentCount', { count: rows.length })}</span>
               {t('exams.fullMarks')}: <span className="font-semibold">{fullMarks}</span>
             </div>
             <button
@@ -192,15 +184,15 @@ export default function MarkEntry() {
                   <tr>
                     <th className="w-16 px-4 py-3">{t('attendance.roll')}</th>
                     <th className="px-4 py-3">{t('attendance.name')}</th>
-                    <th className="w-40 px-4 py-3 text-right">{t('exams.marksObtained')}</th>
+                    <th className="w-48 px-4 py-3 text-right">{t('exams.marksObtained')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {rows.map((r) => (
                     <tr key={r.student} className="hover:bg-slate-50">
                       <td className="px-4 py-2.5 text-slate-500">{r.roll ?? '—'}</td>
-                      <td className="px-4 py-2.5 font-medium text-slate-800">{bt(r.name, lang)}</td>
-                      <td className="px-4 py-2 text-right">
+                      <td className="px-4 py-2.5 font-medium text-slate-800">{bt(r.name, lang)}<span className="mt-0.5 block text-xs font-normal text-slate-500">{r.admissionNo}</span></td>
+                      <td className="whitespace-nowrap px-4 py-2 text-right">
                         <input
                           type="number"
                           min="0"
