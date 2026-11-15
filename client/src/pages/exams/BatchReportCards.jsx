@@ -28,6 +28,7 @@ function OneCard({ card, examName, schoolName, lang, t }) {
           <tr>
             <th className="px-3 py-2">{t('exams.subject')}</th>
             <th className="px-3 py-2 text-right">{t('exams.fullMarks')}</th>
+            <th className="px-3 py-2 text-right">{t('exams.passMarks')}</th>
             <th className="px-3 py-2 text-right">{t('exams.marksObtained')}</th>
             <th className="px-3 py-2 text-center">{t('exams.grade')}</th>
             <th className="px-3 py-2 text-right">{t('exams.gradePoint')}</th>
@@ -38,6 +39,7 @@ function OneCard({ card, examName, schoolName, lang, t }) {
             <tr key={m.id || m._id}>
               <td className="px-3 py-1.5 font-medium text-slate-800">{bt(m.subject?.name, lang)}</td>
               <td className="px-3 py-1.5 text-right text-slate-500">{m.fullMarks}</td>
+              <td className="px-3 py-1.5 text-right text-slate-500">{m.passMarks ?? '—'}</td>
               <td className="px-3 py-1.5 text-right font-semibold">{m.marksObtained}</td>
               <td className={`px-3 py-1.5 text-center font-bold ${gradeColor(m.grade)}`}>{m.grade}</td>
               <td className="px-3 py-1.5 text-right">{m.gradePoint.toFixed(2)}</td>
@@ -48,6 +50,7 @@ function OneCard({ card, examName, schoolName, lang, t }) {
           <tr>
             <td className="px-3 py-2">{t('exams.total')}</td>
             <td className="px-3 py-2 text-right">{card.totalFull}</td>
+            <td />
             <td className="px-3 py-2 text-right">{card.totalObtained}</td>
             <td colSpan={2} className="px-3 py-2 text-right">
               {card.percentage}%

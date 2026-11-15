@@ -175,6 +175,7 @@ export default function ReportCard() {
               <tr>
                 <th className="px-6 py-3">{t('exams.subject')}</th>
                 <th className="px-4 py-3 text-right">{t('exams.fullMarks')}</th>
+                <th className="px-4 py-3 text-right">{t('exams.passMarks')}</th>
                 <th className="px-4 py-3 text-right">{t('exams.marksObtained')}</th>
                 <th className="px-4 py-3 text-center">{t('exams.grade')}</th>
                 <th className="px-4 py-3 text-right">{t('exams.gradePoint')}</th>
@@ -187,6 +188,7 @@ export default function ReportCard() {
                     {bt(m.subject?.name, lang)}
                   </td>
                   <td className="px-4 py-2.5 text-right text-slate-500">{m.fullMarks}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-500">{m.passMarks ?? '—'}</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-slate-800">
                     {m.marksObtained}
                   </td>
@@ -203,6 +205,7 @@ export default function ReportCard() {
               <tr>
                 <td className="px-6 py-3">{t('exams.total')}</td>
                 <td className="px-4 py-3 text-right">{card.totalFull}</td>
+                <td />
                 <td className="px-4 py-3 text-right">{card.totalObtained}</td>
                 <td colSpan={2} className="px-4 py-3 text-right">
                   {card.percentage}%

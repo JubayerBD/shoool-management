@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { validate } from '../../middleware/validate.js';
 import { crudController } from '../../utils/crudController.js';
-import { Exam, Mark } from '../../models/Exam.js';
+import mongoose from 'mongoose';
+import { Exam, ExamPaper, Mark } from '../../models/Exam.js';
 import { Student } from '../../models/People.js';
 import { Class, Section, Subject } from '../../models/Academic.js';
 import { Enrollment } from '../../models/Enrollment.js';
-import { gradeFromMarks } from '../../utils/grading.js';
+import { defaultPassMarks, gradeFromMarks } from '../../utils/grading.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { blockIfInUse } from '../../utils/inUse.js';
 import { assertStudentAccess, isSelfService, ownStudentIds, requireAcademicAccess } from '../../utils/access.js';
@@ -81,11 +82,89 @@ router.get('/exams/:id', requireAuth, async (req, res, next) => {
 }, exams.get);
 router.post('/exams', requireAuth, requireRole('admin'), exams.create);
 router.put('/exams/:id', requireAuth, requireRole('admin'), exams.update);
-router.delete('/exams/:id', requireAuth, requireRole('admin'), exams.remove);
+router.delete('/exams/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  await exams.remove(req, res); // refuses while marks exist
+  await ExamPaper.deleteMany({ exam: req.params.id });
+});
+
+/* ---- Full and pass marks per exam term, class and subject ---- */
+
+/** Subjects a class sits: its own subjects plus subjects shared by every class. */
+const classSubjects = (classId) => Subject.find({ $or: [{ class: classId }, { class: null }] }).sort({ 'name.en': 1 }).lean();
+
+/** The marks that apply to each subject of a class in an exam: the saved setup, else the subject's defaults. */
+async function effectivePapers(exam, classId) {
+  const [subjects, saved] = await Promise.all([classSubjects(classId), ExamPaper.find({ exam, class: classId }).lean()]);
+  const bySubject = new Map(saved.map((paper) => [String(paper.subject), paper]));
+  return subjects.map((subject) => {
+    const paper = bySubject.get(String(subject._id));
+    const fullMarks = paper?.fullMarks ?? subject.fullMarks ?? 100;
+    return {
+      subject: subject._id, name: subject.name, code: subject.code,
+      fullMarks, passMarks: paper?.passMarks ?? subject.passMarks ?? defaultPassMarks(fullMarks),
+      configured: Boolean(paper),
+    };
+  });
+}
+
+const papersQuery = z.object({ exam: objectId, class: objectId });
+router.get('/papers', requireAuth, requireRole('admin', 'teacher'), validate(papersQuery, 'query'), async (req, res) => {
+  const { exam, class: classId } = req.query;
+  if (!await Exam.exists({ _id: exam }) || !await Class.exists({ _id: classId })) throw ApiError.notFound('Exam or class not found');
+  res.json({ items: await effectivePapers(exam, classId) });
+});
+
+const marksValue = z.number().finite().min(0).max(1000);
+const papersSchema = z.object({
+  exam: objectId,
+  class: objectId,
+  papers: z.array(z.object({ subject: objectId, fullMarks: marksValue.min(1), passMarks: marksValue })
+    .refine((p) => p.passMarks <= p.fullMarks, { message: 'Pass marks cannot exceed full marks', path: ['passMarks'] })).min(1).max(100),
+});
+
+// Save the setup and re-grade marks already entered, so results always follow the current setup.
+router.put('/papers', requireAuth, requireRole('admin'), validate(papersSchema), async (req, res) => {
+  const { exam, class: classId, papers } = req.body;
+  if (!await Exam.exists({ _id: exam }) || !await Class.exists({ _id: classId })) throw ApiError.notFound('Exam or class not found');
+  const allowed = new Set((await classSubjects(classId)).map((s) => String(s._id)));
+  if (new Set(papers.map((p) => p.subject)).size !== papers.length) throw ApiError.badRequest('Each subject can appear only once');
+  if (papers.some((p) => !allowed.has(p.subject))) throw ApiError.badRequest('Every subject must belong to the selected class');
+
+  const { students } = await classRoster({ exam, class: classId });
+  const studentIds = students.map((s) => s._id);
+  const entered = await Mark.find({ exam, subject: { $in: papers.map((p) => p.subject) }, $or: [{ class: classId }, { class: null, student: { $in: studentIds } }] }).lean();
+  const bySubject = new Map(papers.map((p) => [p.subject, p]));
+  const tooHigh = entered.filter((m) => m.marksObtained > bySubject.get(String(m.subject)).fullMarks);
+  if (tooHigh.length) {
+    const top = Math.max(...tooHigh.map((m) => m.marksObtained));
+    throw ApiError.badRequest(`${tooHigh.length} entered mark(s) are higher than the new full marks (highest is ${top}). Correct those marks first.`);
+  }
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      await ExamPaper.bulkWrite(papers.map((p) => ({ updateOne: {
+        filter: { exam, class: classId, subject: p.subject },
+        update: { $set: { fullMarks: p.fullMarks, passMarks: p.passMarks } }, upsert: true,
+      } })), { session });
+      if (entered.length) {
+        await Mark.bulkWrite(entered.map((m) => {
+          const paper = bySubject.get(String(m.subject));
+          return { updateOne: { filter: { _id: m._id }, update: { $set: {
+            fullMarks: paper.fullMarks, passMarks: paper.passMarks, class: classId,
+            ...gradeFromMarks(m.marksObtained, paper.fullMarks, paper.passMarks),
+          } } } };
+        }), { session });
+      }
+    });
+  } finally { await session.endSession(); }
+  res.json({ items: await effectivePapers(exam, classId), regraded: entered.length });
+});
 
 /* ---- Marks entry ---- */
 const marksSchema = z.object({
   exam: objectId,
+  class: objectId.optional(), // the class the marks were entered for (picks its full/pass marks)
   marks: z
     .array(
       z
@@ -108,9 +187,10 @@ router.post(
   requireRole('admin', 'teacher'),
   validate(marksSchema),
   async (req, res) => {
-    const { exam, marks } = req.body;
+    const { exam, marks, class: entryClass } = req.body;
     const examDoc = await Exam.findById(exam).lean();
     if (!examDoc) throw ApiError.badRequest('Exam not found');
+    if (entryClass && !await Class.exists({ _id: entryClass })) throw ApiError.badRequest('Class not found');
     const students = await Student.find({ _id: { $in: marks.map((m) => m.student) } }).lean();
     const subjects = await Subject.find({ _id: { $in: marks.map((m) => m.subject) } }).lean();
     const enrollments = await Enrollment.find({ student: { $in: students.map((s) => s._id) }, status: { $ne: 'withdrawn' } }).lean();
@@ -121,6 +201,7 @@ router.post(
       const student = students.find((s) => String(s._id) === mark.student);
       const subject = subjects.find((s) => String(s._id) === mark.subject);
       if (!student || !subject) throw ApiError.badRequest('Every mark must reference an existing student and subject');
+      if (entryClass && !attends(student, entryClass)) throw ApiError.badRequest('Every student must belong to the selected class');
       if (subject.class && !attends(student, subject.class)) throw ApiError.badRequest('Subject must belong to the student’s class');
       const inExamYear = !examDoc.academicYear || !student.academicYear || String(examDoc.academicYear) === String(student.academicYear)
         || enrollments.some((e) => String(e.student) === String(student._id) && String(e.academicYear) === String(examDoc.academicYear));
@@ -129,8 +210,19 @@ router.post(
       if (seen.has(key)) throw ApiError.badRequest('A student and subject can appear only once in a marks batch');
       seen.add(key);
     }
+    // Full and pass marks come from the exam's setup for that class, not from the browser.
+    const classOf = (m) => entryClass || subjects.find((s) => String(s._id) === m.subject).class || students.find((s) => String(s._id) === m.student).class;
+    const papers = await ExamPaper.find({ exam, subject: { $in: marks.map((m) => m.subject) } }).lean();
+    for (const m of marks) {
+      const paper = papers.find((p) => String(p.subject) === m.subject && String(p.class) === String(classOf(m)));
+      const subject = subjects.find((s) => String(s._id) === m.subject);
+      m.class = classOf(m);
+      m.fullMarks = paper?.fullMarks ?? m.fullMarks;
+      m.passMarks = paper?.passMarks ?? subject.passMarks ?? defaultPassMarks(m.fullMarks);
+      if (m.marksObtained > m.fullMarks) throw ApiError.badRequest(`Marks cannot be more than the full marks (${m.fullMarks})`);
+    }
     const ops = marks.map((m) => {
-      const { grade, gradePoint } = gradeFromMarks(m.marksObtained, m.fullMarks);
+      const { grade, gradePoint } = gradeFromMarks(m.marksObtained, m.fullMarks, m.passMarks);
       return {
         updateOne: {
           filter: { exam, student: m.student, subject: m.subject },
@@ -141,6 +233,8 @@ router.post(
               subject: m.subject,
               marksObtained: m.marksObtained,
               fullMarks: m.fullMarks,
+              passMarks: m.passMarks,
+              ...(m.class ? { class: m.class } : {}),
               grade,
               gradePoint,
               remark: m.remark || '',

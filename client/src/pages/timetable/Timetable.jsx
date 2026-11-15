@@ -7,6 +7,7 @@ import { useToast } from '../../components/ui/Toast.jsx';
 import Modal from '../../components/ui/Modal.jsx';
 import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
 import { t as bt } from '../../utils/bilingual.js';
+import ClassSectionSelects, { useClassSections } from '../exams/ClassSectionSelects.jsx';
 
 const DAYS = [0, 1, 2, 3, 4, 5, 6];
 const SCHOOL_DAYS = DAYS.filter((day) => day !== 5);
@@ -120,10 +121,11 @@ export default function Timetable() {
   const selfService = ['student', 'parent'].includes(user.role);
   const own = useOwnStudent();
 
-  const [sections, setSections] = useState([]);
+  const { classes, sections } = useClassSections(!selfService);
   const [subjects, setSubjects] = useState([]);
   const [teachers, setTeachers] = useState([]);
-  const [section, setSection] = useState('');
+  const [klass, setKlass] = useState('');
+  const [section, setSection] = useState(''); // optional: empty means the whole class
   const [slots, setSlots] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -138,48 +140,44 @@ export default function Timetable() {
   }, [week]);
 
   useEffect(() => {
-    api.get('/academics/sections', { params: { limit: 500 } }).then((r) => setSections(r.data.items));
     api.get('/academics/subjects', { params: { limit: 500 } }).then((r) => setSubjects(r.data.items));
     api.get('/people/teachers', { params: { limit: 500 } }).then((r) => setTeachers(r.data.items));
   }, []);
 
   const loadSlots = useCallback(async () => {
-    if (!section) return;
+    if (!klass) { setSlots([]); return; }
     setLoading(true);
     try {
-      const res = await api.get('/schedule/timetable', { params: { section, limit: 500 } });
+      const res = await api.get('/schedule/timetable', { params: { class: klass, ...(section ? { section } : {}), limit: 500 } });
       setSlots(res.data.items);
     } catch {
       setSlots([]);
     } finally {
       setLoading(false);
     }
-  }, [section]);
+  }, [klass, section]);
 
   useEffect(() => {
     loadSlots();
   }, [loadSlots]);
 
-  // Self-service: lock the section to the student's own section.
+  // Self-service: lock to the student's own class (and section, when they have one).
   useEffect(() => {
     if (selfService && own.student) {
-      const sid = own.student.section?.id || own.student.section?._id || own.student.section;
-      if (sid) setSection(sid);
+      const idOf = (value) => value?.id || value?._id || value || '';
+      setKlass(idOf(own.student.class));
+      setSection(idOf(own.student.section));
     }
   }, [selfService, own.student]);
 
-  // Subjects for the chosen section's class.
-  const sectionClassId = useMemo(() => {
-    const s = sections.find((x) => (x.id || x._id) === section);
-    return s?.class?.id || s?.class?._id || s?.class || '';
-  }, [sections, section]);
-  const sectionSubjects = useMemo(
+  // Subjects for the chosen class.
+  const classSubjects = useMemo(
     () =>
       subjects.filter((s) => {
         const cls = s.class?.id || s.class?._id || s.class;
-        return !cls || cls === sectionClassId;
+        return !cls || cls === klass;
       }),
-    [subjects, sectionClassId]
+    [subjects, klass]
   );
 
   const byDay = useMemo(() => {
@@ -193,7 +191,7 @@ export default function Timetable() {
   const addPeriod = async (payload) => {
     setSaving(true);
     try {
-      await api.post('/schedule/timetable/bulk', { ...payload, section });
+      await api.post('/schedule/timetable/bulk', { ...payload, class: klass, ...(section ? { section } : {}) });
       setModalOpen(false);
       push(t('timetable.saved'));
       loadSlots();
@@ -224,25 +222,22 @@ export default function Timetable() {
         {selfService ? (
           own.student && (
             <div className="text-sm text-slate-600">
-              {bt(own.student.class?.name, lang)} — {bt(own.student.section?.name, lang)}
+              {[bt(own.student.class?.name, lang), bt(own.student.section?.name, lang)].filter(Boolean).join(' — ')}
             </div>
           )
         ) : (
-          <div className="w-64">
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              {t('students.section')}
-            </label>
-            <Select value={section} onChange={(e) => setSection(e.target.value)}>
-              <option value="">{t('timetable.selectSection')}</option>
-              {sections.map((s) => (
-                <option key={s.id || s._id} value={s.id || s._id}>
-                  {bt(s.class?.name, lang)} — {bt(s.name, lang)}
-                </option>
-              ))}
-            </Select>
+          <div className="flex flex-wrap items-end gap-3">
+            <ClassSectionSelects
+              classes={classes}
+              sections={sections}
+              klass={klass}
+              section={section}
+              lang={lang}
+              onChange={(next) => { setKlass(next.klass); setSection(next.section); }}
+            />
           </div>
         )}
-        {canManage && section && (
+        {canManage && klass && (
           <button
             type="button"
             onClick={() => setModalOpen(true)}
@@ -253,7 +248,7 @@ export default function Timetable() {
         )}
       </div>
 
-      {!section ? (
+      {!klass ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
           {t('timetable.chooseSection')}
         </div>
@@ -286,6 +281,9 @@ export default function Timetable() {
                         {slot.teacher && (
                           <div className="text-xs text-slate-500">{bt(slot.teacher?.name, lang)}</div>
                         )}
+                        {!section && slot.section && (
+                          <div className="text-xs text-slate-500">{t('students.section')}: {bt(slot.section?.name, lang)}</div>
+                        )}
                         {slot.room && <div className="text-xs text-slate-400">{slot.room}</div>}
                         {canManage && (
                           <button
@@ -311,7 +309,7 @@ export default function Timetable() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onSubmit={addPeriod}
-        subjects={sectionSubjects}
+        subjects={classSubjects}
         teachers={teachers}
         saving={saving}
       />

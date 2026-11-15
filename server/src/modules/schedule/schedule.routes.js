@@ -9,6 +9,9 @@ import { ApiError } from '../../utils/ApiError.js';
 import { noticeScopeFor } from '../../utils/access.js';
 import mongoose from 'mongoose';
 import { validateReferences } from '../../utils/validateReferences.js';
+import { Section } from '../../models/Academic.js';
+
+const isId = (value) => typeof value === 'string' && /^[a-f\d]{24}$/i.test(value);
 
 const escapeHtml = (value) =>
   String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -30,8 +33,17 @@ async function validateSlot(slot, id, session = null) {
   if (slot.endTime <= slot.startTime) throw ApiError.badRequest('End time must be after the start time');
   const overlap = { dayOfWeek: slot.dayOfWeek, startTime: { $lt: slot.endTime }, endTime: { $gt: slot.startTime } };
   if (id) overlap._id = { $ne: id };
-  if (slot.section && (await TimetableSlot.exists({ ...overlap, section: slot.section }).session(session))) {
-    throw ApiError.conflict('This section already has a class in that time slot');
+  // A whole-class period clashes with anything else in that class; a section's period clashes
+  // with the same section and with whole-class periods.
+  const sectionDoc = slot.section ? await Section.findById(slot.section).select('class').lean() : null;
+  const classId = slot.class || sectionDoc?.class;
+  if (slot.section) {
+    const scope = { $or: [{ section: slot.section }, ...(classId ? [{ class: classId, section: null }] : [])] };
+    if (await TimetableSlot.exists({ ...overlap, ...scope }).session(session)) throw ApiError.conflict('This section already has a class in that time slot');
+  } else if (classId) {
+    const sectionIds = await Section.find({ class: classId }).distinct('_id');
+    const scope = { $or: [{ class: classId }, { section: { $in: sectionIds } }] };
+    if (await TimetableSlot.exists({ ...overlap, ...scope }).session(session)) throw ApiError.conflict('This class already has a period in that time slot');
   }
   if (slot.teacher && (await TimetableSlot.exists({ ...overlap, teacher: slot.teacher }).session(session))) {
     throw ApiError.conflict('This teacher is already teaching another class in that time slot');
@@ -78,14 +90,37 @@ const slots = crudController(TimetableSlot, {
   defaultSort: { dayOfWeek: 1, startTime: 1 },
 });
 
-router.get('/timetable', requireAuth, slots.list);
+// Weekly routine. `class` lists the whole class (its own periods and every section's);
+// adding `section` narrows to that section plus the periods shared by the whole class.
+router.get('/timetable', requireAuth, async (req, res) => {
+  const { class: classId, section, teacher, dayOfWeek } = req.query;
+  for (const value of [classId, section, teacher]) if (value !== undefined && value !== '' && !isId(value)) throw ApiError.badRequest('Invalid id');
+  const filter = {};
+  if (section) {
+    const sectionDoc = await Section.findById(section).select('class').lean();
+    filter.$or = [{ section }, ...(sectionDoc ? [{ class: sectionDoc.class, section: null }] : [])];
+  } else if (classId) {
+    const sectionIds = await Section.find({ class: classId }).distinct('_id');
+    filter.$or = [{ class: classId }, { section: { $in: sectionIds } }];
+  }
+  if (teacher) filter.teacher = teacher;
+  if (typeof dayOfWeek === 'string' && /^[0-6]$/.test(dayOfWeek)) filter.dayOfWeek = Number(dayOfWeek);
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 25));
+  const [items, total] = await Promise.all([
+    TimetableSlot.find(filter).sort({ dayOfWeek: 1, startTime: 1 }).skip((page - 1) * limit).limit(limit).populate('class').populate('section').populate('subject').populate('teacher'),
+    TimetableSlot.countDocuments(filter),
+  ]);
+  res.json({ items, total, page, limit, pages: Math.ceil(total / limit) });
+});
 router.post('/timetable/bulk', requireAuth, requireRole('admin', 'teacher'), async (req, res) => {
   const { daysOfWeek, section, subject, teacher, startTime, endTime, room } = req.body;
+  const classId = req.body.class;
   if (!Array.isArray(daysOfWeek) || !daysOfWeek.length || daysOfWeek.length > 7 ||
       daysOfWeek.some((day) => !Number.isInteger(day) || day < 0 || day > 6) || new Set(daysOfWeek).size !== daysOfWeek.length) {
     throw ApiError.badRequest('Select between one and seven different days');
   }
-  const docs = daysOfWeek.map((dayOfWeek) => new TimetableSlot({ section, subject, teacher, startTime, endTime, room, dayOfWeek }));
+  const docs = daysOfWeek.map((dayOfWeek) => new TimetableSlot({ class: classId, section, subject, teacher, startTime, endTime, room, dayOfWeek }));
   for (const doc of docs) { await doc.validate(); await validateReferences(doc); }
   const session = await mongoose.startSession();
   try {

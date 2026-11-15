@@ -1,9 +1,18 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ResourceCrud from '../../components/crud/ResourceCrud.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
+import ExamPapers from './ExamPapers.jsx';
+import { useClassSections } from './ClassSectionSelects.jsx';
 
 export default function ExamTerms() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const isAdmin = user.role === 'admin';
+  const { classes } = useClassSections(isAdmin);
+  const [papersFor, setPapersFor] = useState(null);
   return (
+    <>
     <ResourceCrud
       endpoint="/exams/exams"
       labels={{ title: 'exams.tabs.terms', add: 'exams.add', edit: 'exams.edit' }}
@@ -27,6 +36,15 @@ export default function ExamTerms() {
             </span>
           ),
         },
+        ...(isAdmin ? [{
+          key: 'papers',
+          header: t('exams.subjectMarks'),
+          render: (r) => (
+            <button type="button" onClick={() => setPapersFor(r)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100">
+              {t('exams.setMarks')}
+            </button>
+          ),
+        }] : []),
       ]}
       refs={{ years: '/academics/academic-years' }}
       fields={[
@@ -49,5 +67,7 @@ export default function ExamTerms() {
         { key: 'isPublished', type: 'checkbox', label: t('exams.published') },
       ]}
     />
+    <ExamPapers open={!!papersFor} exam={papersFor} classes={classes} onClose={() => setPapersFor(null)} />
+    </>
   );
 }

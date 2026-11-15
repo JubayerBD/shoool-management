@@ -23,9 +23,11 @@ export async function validateReferences(doc) {
     if (grade.academicYear && String(grade.academicYear) !== String(doc.academicYear)) throw ApiError.badRequest('Class must belong to the selected academic year');
   }
   if (doc.constructor.modelName === 'TimetableSlot') {
-    const section = await doc.db.model('Section').findById(doc.section).lean();
+    const section = doc.section ? await doc.db.model('Section').findById(doc.section).lean() : null;
+    const classId = doc.class || section?.class;
+    if (section && doc.class && String(section.class) !== String(doc.class)) throw ApiError.badRequest('Section does not belong to the selected class');
     const subject = await doc.db.model('Subject').findById(doc.subject).lean();
-    if (subject.class && String(subject.class) !== String(section.class)) throw ApiError.badRequest('Subject must belong to the section’s class');
+    if (subject.class && String(subject.class) !== String(classId)) throw ApiError.badRequest('Subject must belong to the selected class');
   }
   if (doc.startDate && doc.endDate && doc.endDate < doc.startDate) throw ApiError.badRequest('End date must not be before the start date');
 }

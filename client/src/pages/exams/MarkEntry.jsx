@@ -5,10 +5,15 @@ import { useToast } from '../../components/ui/Toast.jsx';
 import { Select } from '../../components/ui/Field.jsx';
 import { t as bt } from '../../utils/bilingual.js';
 import ClassSectionSelects, { useClassSections, examYearId } from './ClassSectionSelects.jsx';
+import ExamPapers from './ExamPapers.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { apiError } from '../../utils/apiError.js';
 
 export default function MarkEntry() {
   const { t, i18n } = useTranslation();
   const { push } = useToast();
+  const { user } = useAuth();
+  const isAdmin = user.role === 'admin';
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
 
   const [exams, setExams] = useState([]);
@@ -24,6 +29,8 @@ export default function MarkEntry() {
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [paper, setPaper] = useState(null); // { fullMarks, passMarks, configured } for this exam, class and subject
+  const [papersOpen, setPapersOpen] = useState(false);
 
   useEffect(() => {
     api.get('/exams/exams', { params: { limit: 200 } }).then((r) => setExams(r.data.items));
@@ -39,18 +46,21 @@ export default function MarkEntry() {
     [subjects, klass]
   );
 
-  const selectedSubject = subjects.find((s) => (s.id || s._id) === subject);
-  const fullMarks = selectedSubject?.fullMarks || 100;
+  const fullMarks = paper?.fullMarks ?? 100;
+  const passMarks = paper?.passMarks ?? Math.round(fullMarks * 0.33);
+  const examDoc = exams.find((x) => (x.id || x._id) === exam);
 
   const load = async () => {
     if (!exam || !klass || !subject) return;
     setLoading(true);
     setLoaded(false);
     try {
-      const [studentsRes, marksRes] = await Promise.all([
+      const [studentsRes, marksRes, papersRes] = await Promise.all([
         api.get('/exams/roster', { params: { exam, class: klass, ...(section ? { section } : {}) } }),
         api.get('/exams/marks', { params: { exam, subject } }),
+        api.get('/exams/papers', { params: { exam, class: klass } }),
       ]);
+      setPaper(papersRes.data.items.find((row) => row.subject === subject) || null);
       const existing = {};
       for (const m of marksRes.data.items) {
         existing[m.student?.id || m.student?._id || m.student] = m.marksObtained;
@@ -66,7 +76,7 @@ export default function MarkEntry() {
       );
       setLoaded(true);
     } catch (err) {
-      push(err.response?.data?.error?.message || t('attendance.rosterError'), 'error');
+      push(apiError(err, t('attendance.rosterError')), 'error');
     } finally {
       setLoading(false);
     }
@@ -85,19 +95,30 @@ export default function MarkEntry() {
         fullMarks,
       }));
     if (!marks.length) return;
+    if (marks.some((m) => m.marksObtained > fullMarks)) { push(t('exams.aboveFull', { full: fullMarks }), 'error'); return; }
     setSaving(true);
     try {
-      await api.post('/exams/marks', { exam, marks });
+      await api.post('/exams/marks', { exam, class: klass, marks });
       push(t('exams.saved'));
     } catch (err) {
-      push(err.response?.data?.error?.message || 'Error', 'error');
+      push(apiError(err), 'error');
     } finally {
       setSaving(false);
     }
   };
 
+  const failing = rows.filter((r) => r.marksObtained !== '' && r.marksObtained !== null && Number(r.marksObtained) < passMarks).length;
+
   return (
     <div className="space-y-5">
+      <ExamPapers
+        open={papersOpen}
+        exam={examDoc}
+        classes={classes}
+        initialClass={klass}
+        onClose={() => setPapersOpen(false)}
+        onSaved={() => load()}
+      />
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-4 shadow-sm">
         <div className="w-52">
@@ -159,9 +180,12 @@ export default function MarkEntry() {
       {loaded && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <div className="text-sm text-slate-600">
-              <span className="mr-3 font-semibold">{t('attendance.studentCount', { count: rows.length })}</span>
-              {t('exams.fullMarks')}: <span className="font-semibold">{fullMarks}</span>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
+              <span className="font-semibold">{t('attendance.studentCount', { count: rows.length })}</span>
+              <span>{t('exams.fullMarks')}: <span className="font-semibold">{fullMarks}</span></span>
+              <span>{t('exams.passMarks')}: <span className="font-semibold">{passMarks}</span></span>
+              {failing > 0 && <span className="font-medium text-red-600">{t('exams.belowPass', { count: failing })}</span>}
+              {isAdmin && <button type="button" onClick={() => setPapersOpen(true)} className="text-brand-600 underline">{t('exams.setMarks')}</button>}
             </div>
             <button
               type="button"
@@ -172,6 +196,12 @@ export default function MarkEntry() {
               {saving ? t('common.saving') : t('exams.save')}
             </button>
           </div>
+
+          {paper && !paper.configured && (
+            <div role="status" className="rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+              {t(isAdmin ? 'exams.notConfiguredAdmin' : 'exams.notConfigured', { full: fullMarks, pass: passMarks })}
+            </div>
+          )}
 
           {rows.length === 0 ? (
             <div className="rounded-xl bg-white p-8 text-center text-slate-400 shadow-sm">
@@ -199,7 +229,12 @@ export default function MarkEntry() {
                           max={fullMarks}
                           value={r.marksObtained}
                           onChange={(e) => setMark(r.student, e.target.value)}
-                          className="w-24 rounded-lg border border-slate-300 px-3 py-1.5 text-right outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                          aria-invalid={r.marksObtained !== '' && Number(r.marksObtained) > fullMarks}
+                          className={`w-24 rounded-lg border px-3 py-1.5 text-right outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 ${
+                            r.marksObtained === '' ? 'border-slate-300'
+                              : Number(r.marksObtained) > fullMarks ? 'border-red-500 bg-red-50'
+                              : Number(r.marksObtained) < passMarks ? 'border-red-300 text-red-600' : 'border-slate-300'
+                          }`}
                         />
                         <span className="ml-1 text-slate-400">/ {fullMarks}</span>
                       </td>

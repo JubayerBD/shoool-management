@@ -12,7 +12,17 @@ export function gradeFromPercent(percent) {
   return { grade: 'F', gradePoint: 0.0 };
 }
 
-export function gradeFromMarks(marksObtained, fullMarks = 100) {
+/** Pass mark used when none has been set: 33% of full marks (30 -> 10, 40 -> 13, 100 -> 33). */
+export const defaultPassMarks = (fullMarks) => Math.round(fullMarks * 0.33);
+
+/**
+ * Grade one subject. Below the pass mark is always F. At or above it the letter comes from the
+ * percentage, but never F: 13 of 40 (32.5%) passes when the pass mark is 13, and earns a D.
+ */
+export function gradeFromMarks(marksObtained, fullMarks = 100, passMarks = null) {
   const pct = fullMarks > 0 ? (marksObtained / fullMarks) * 100 : 0;
-  return gradeFromPercent(pct);
+  if (typeof passMarks !== 'number') return gradeFromPercent(pct);
+  if (marksObtained < passMarks) return { grade: 'F', gradePoint: 0.0 };
+  const graded = gradeFromPercent(pct);
+  return graded.grade === 'F' ? { grade: 'D', gradePoint: 1.0 } : graded;
 }

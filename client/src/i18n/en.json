@@ -143,7 +143,7 @@
   "timetable": {
     "title": "Timetable",
     "selectSection": "Select section",
-    "chooseSection": "Choose a section to view its weekly routine.",
+    "chooseSection": "Choose a class to view its weekly routine. Section is optional.",
     "addPeriod": "Add period",
     "day": "Day",
     "startTime": "Start time",
@@ -453,7 +453,21 @@
     "result": "Result",
     "pass": "Pass",
     "fail": "Fail",
-    "view": "View"
+    "view": "View",
+    "subjectMarks": "Subject marks",
+    "setMarks": "Set full & pass marks",
+    "passMarks": "Pass marks",
+    "papersHint": "Each exam term can have different full and pass marks. Choose a class, then enter the marks for every subject. Marks already entered are re-graded when you save.",
+    "fillPassMarks": "Set pass marks to 33%",
+    "notSetYet": "Not set yet",
+    "noSubjects": "This class has no subjects yet. Add them under Subjects.",
+    "papersInvalid": "Every subject needs full marks of at least 1 and pass marks between 0 and the full marks.",
+    "papersSaved": "Full and pass marks saved",
+    "papersSavedRegraded": "Saved. {{count}} entered marks were re-graded.",
+    "notConfigured": "Full and pass marks for this subject in this exam have not been set, so {{full}} / {{pass}} is used. Ask the admin to set them under Exam terms → Subject marks.",
+    "notConfiguredAdmin": "Full and pass marks for this subject in this exam have not been set, so {{full}} / {{pass}} is used. Click “Set full & pass marks” to set them.",
+    "belowPass": "{{count}} below pass marks",
+    "aboveFull": "Marks cannot be more than the full marks ({{full}})."
   },
   "attendance": {
     "title": "Attendance",

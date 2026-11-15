@@ -3,10 +3,14 @@ import { bilingual, baseSchemaOptions } from './common.js';
 
 const { Schema } = mongoose;
 
-/** A single period in a section's weekly routine. */
+/**
+ * A single period in a class's weekly routine. `section` is optional: without it the
+ * period belongs to the whole class. (Older periods may carry only a section.)
+ */
 const timetableSlotSchema = new Schema(
   {
-    section: { type: Schema.Types.ObjectId, ref: 'Section', required: true, index: true },
+    class: { type: Schema.Types.ObjectId, ref: 'Class', index: true },
+    section: { type: Schema.Types.ObjectId, ref: 'Section', index: true },
     subject: { type: Schema.Types.ObjectId, ref: 'Subject', required: true },
     teacher: { type: Schema.Types.ObjectId, ref: 'Teacher' },
     // 0 = Sunday ... 6 = Saturday (BD week typically starts Sunday).
@@ -17,6 +21,16 @@ const timetableSlotSchema = new Schema(
   },
   baseSchemaOptions
 );
+
+// Every period needs a class; a section alone implies its class.
+timetableSlotSchema.pre('validate', async function fillClass() {
+  if (this.section && (!this.class || this.isModified('section'))) {
+    const section = await this.constructor.db.model('Section').findById(this.section).select('class').lean();
+    if (section && !this.class) this.class = section.class;
+    else if (section && String(section.class) !== String(this.class)) this.invalidate('section', 'Section does not belong to the selected class');
+  }
+  if (!this.class && !this.section) this.invalidate('class', 'Choose a class');
+});
 
 /** A notice / announcement on the board. */
 const noticeSchema = new Schema(

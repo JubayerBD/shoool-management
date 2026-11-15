@@ -313,6 +313,56 @@ test('exams: validate every mark reference before bulk writes and retain enterin
   assert.equal((await request(`/exams/roster?class=${klass.id}`, undefined, learner)).status, 403);
 });
 
+test('exam marks setup: each exam term has its own full and pass marks per class and subject', async () => {
+  const { gradeFromMarks } = await import('../src/utils/grading.js');
+  assert.deepEqual(gradeFromMarks(13, 40, 13), { grade: 'D', gradePoint: 1 }, '13 of 40 passes when the pass mark is 13');
+  assert.deepEqual(gradeFromMarks(12, 40, 13), { grade: 'F', gradePoint: 0 });
+  assert.deepEqual(gradeFromMarks(30, 30, 10), { grade: 'A+', gradePoint: 5 });
+
+  const grade = await m.Class.create({ name: { en: 'Papers class' }, academicYear: year.id });
+  const bangla = await m.Subject.create({ name: { en: 'Bangla (shared)' } }); // shared by every class, no own marks
+  const pupil = await m.Student.create({ name: { en: 'Papers pupil' }, admissionNo: 'QA-PAPER-1', class: grade.id, academicYear: year.id });
+  const tutorial = await m.Exam.create({ name: { en: '1st Tutorial' }, academicYear: year.id });
+  const annual = await m.Exam.create({ name: { en: 'Annual' }, academicYear: year.id });
+  const papers = (examDoc) => request(`/exams/papers?exam=${examDoc.id}&class=${grade.id}`, undefined, teacher);
+  const setup = (examDoc, fullMarks, passMarks, user = admin) => request('/exams/papers', { exam: examDoc.id, class: grade.id, papers: [{ subject: bangla.id, fullMarks, passMarks }] }, user, 'PUT');
+
+  // Not set yet: defaults to 100 / 33.
+  const before = (await papers(tutorial)).items.find((row) => row.subject === bangla.id);
+  assert.deepEqual([before.fullMarks, before.passMarks, before.configured], [100, 33, false]);
+  assert.equal((await setup(tutorial, 30, 10, teacher)).status, 403, 'only admins change the setup');
+  assert.equal((await setup(tutorial, 30, 31)).status, 400, 'pass marks cannot exceed full marks');
+  assert.equal((await request('/exams/papers', { exam: tutorial.id, class: grade.id, papers: [{ subject: subject.id, fullMarks: 30, passMarks: 10 }] }, admin, 'PUT')).status, 400, 'subject of another class');
+  assert.equal((await setup(tutorial, 30, 10)).status, 200);
+  assert.equal((await setup(annual, 40, 13)).status, 200);
+  const set = (await papers(annual)).items.find((row) => row.subject === bangla.id);
+  assert.deepEqual([set.fullMarks, set.passMarks, set.configured], [40, 13, true]);
+  assert.equal((await papers(tutorial)).items.find((row) => row.subject === bangla.id).fullMarks, 30, 'exams keep separate setups');
+
+  // Marks use the setup of their exam and class; the browser's full-marks value is ignored.
+  const enter = (examDoc, marksObtained) => request('/exams/marks', { exam: examDoc.id, class: grade.id, marks: [{ student: pupil.id, subject: bangla.id, marksObtained, fullMarks: 100 }] }, teacher);
+  assert.equal((await enter(tutorial, 31)).status, 400, 'above the 30 full marks of the tutorial');
+  assert.equal((await enter(tutorial, 10)).status, 200);
+  assert.equal((await enter(annual, 13)).status, 200);
+  const tutorialMark = await m.Mark.findOne({ exam: tutorial.id, student: pupil.id });
+  assert.deepEqual([tutorialMark.fullMarks, tutorialMark.passMarks, tutorialMark.grade, String(tutorialMark.class)], [30, 10, 'D', grade.id]);
+  const annualCard = (await request(`/exams/report-card?exam=${annual.id}&student=${pupil.id}`, undefined, teacher)).reportCard;
+  assert.equal(annualCard.result, 'Pass', '13 of 40 with pass mark 13 is a pass'); assert.equal(annualCard.totalFull, 40);
+
+  // Changing the setup re-grades marks already entered, and cannot go below an entered mark.
+  assert.equal((await setup(annual, 40, 14)).status, 200);
+  assert.equal((await m.Mark.findOne({ exam: annual.id, student: pupil.id })).grade, 'F');
+  assert.equal((await request(`/exams/tabulation?exam=${annual.id}&class=${grade.id}`, undefined, teacher)).rows[0].result, 'Fail');
+  assert.equal((await setup(annual, 12, 4)).status, 400, 'an entered 13 is above 12 full marks');
+  assert.equal((await m.ExamPaper.findOne({ exam: annual.id, class: grade.id })).fullMarks, 40, 'rejected changes save nothing');
+
+  // The setup cannot be orphaned: subjects and classes in use are protected, and it goes with its exam.
+  assert.equal((await request(`/academics/subjects/${bangla.id}`, undefined, admin, 'DELETE')).status, 409);
+  await m.Mark.deleteMany({ exam: { $in: [tutorial.id, annual.id] } });
+  assert.equal((await request(`/exams/exams/${annual.id}`, undefined, admin, 'DELETE')).status, 200);
+  assert.equal(await m.ExamPaper.countDocuments({ exam: annual.id }), 0);
+});
+
 test('notices: attribute author correctly and do not reveal scheduled notices before publication', async () => {
   const created = await request('/schedule/notices', { title: { en: 'Future announcement' }, publishedAt: '2099-01-01', audience: ['student'] });
   assert.equal(created.status, 201);
@@ -408,6 +458,34 @@ test('timetable: multiple selected days save together and conflicts never partia
   assert.equal(week.status, 201);
   assert.equal(week.items.length, 6);
   await m.TimetableSlot.deleteMany({ _id: { $in: [...created.items, ...week.items].map((s) => s.id) } });
+});
+
+test('timetable: a class without sections has its own routine; whole-class and section periods cannot clash', async () => {
+  const grade = await m.Class.create({ name: { en: 'Routine class' }, academicYear: year.id });
+  const lesson = await m.Subject.create({ name: { en: 'Routine subject' }, class: grade.id });
+  const body = { class: grade.id, subject: lesson.id, daysOfWeek: [0, 1], startTime: '10:00', endTime: '10:45' };
+  const created = await request('/schedule/timetable/bulk', body);
+  assert.equal(created.status, 201); assert.equal(String(created.items[0].class), grade.id); assert.equal(created.items[0].section, undefined);
+  assert.equal((await request('/schedule/timetable/bulk', { ...body, daysOfWeek: [1], startTime: '10:30', endTime: '11:00' })).status, 409);
+  assert.equal((await request('/schedule/timetable/bulk', { subject: lesson.id, daysOfWeek: [2], startTime: '10:00', endTime: '10:45' })).status, 400, 'a class is required');
+  assert.equal((await request('/schedule/timetable/bulk', { ...body, subject: subject.id, daysOfWeek: [3] })).status, 400, 'subject of another class');
+  // Sections added later: their periods clash with whole-class periods, and both show up for the class.
+  const part = await m.Section.create({ name: { en: 'Routine A' }, class: grade.id });
+  assert.equal((await request('/schedule/timetable/bulk', { ...body, section: part.id, daysOfWeek: [0] })).status, 409);
+  assert.equal((await request('/schedule/timetable/bulk', { ...body, section: section.id, daysOfWeek: [3] })).status, 400, 'section of another class');
+  const sectionOnly = await request('/schedule/timetable/bulk', { section: part.id, subject: lesson.id, daysOfWeek: [2], startTime: '10:00', endTime: '10:45' });
+  assert.equal(sectionOnly.status, 201); assert.equal(String(sectionOnly.items[0].class), grade.id, 'class is filled from the section');
+  assert.equal((await request('/schedule/timetable/bulk', { ...body, daysOfWeek: [2] })).status, 409, 'whole-class period over a section period');
+  // A period saved before classes were recorded (section only) still appears in the class routine.
+  await m.TimetableSlot.collection.insertOne({ section: part._id, subject: lesson._id, dayOfWeek: 4, startTime: '08:00', endTime: '08:45' });
+  const whole = await request(`/schedule/timetable?class=${grade.id}&limit=500`);
+  assert.deepEqual(whole.items.map((slot) => slot.dayOfWeek), [0, 1, 2, 4]);
+  const narrowed = await request(`/schedule/timetable?section=${part.id}&limit=500`);
+  assert.deepEqual(narrowed.items.map((slot) => slot.dayOfWeek), [0, 1, 2, 4], 'section view includes whole-class periods');
+  assert.equal((await request(`/schedule/timetable?class=${klass.id}&limit=500`)).items.some((slot) => String(slot.class?.id) === grade.id), false);
+  assert.equal((await request('/schedule/timetable?class=nope')).status, 400);
+  assert.equal((await request(`/academics/classes/${grade.id}`, undefined, admin, 'DELETE')).status, 409, 'class with a routine cannot be deleted');
+  await m.TimetableSlot.deleteMany({ $or: [{ class: grade.id }, { section: part.id }] });
 });
 
 test('timetable: create, edit, reject overlaps and invalid references, then remove unused periods', async () => {

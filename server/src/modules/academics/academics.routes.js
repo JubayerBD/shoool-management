@@ -3,7 +3,7 @@ import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { crudController } from '../../utils/crudController.js';
 import { AcademicYear, Class, Section, Subject } from '../../models/Academic.js';
 import { Student } from '../../models/People.js';
-import { Exam, Mark } from '../../models/Exam.js';
+import { Exam, ExamPaper, Mark } from '../../models/Exam.js';
 import { TimetableSlot } from '../../models/Schedule.js';
 import { Attendance } from '../../models/Attendance.js';
 import { FeeStructure } from '../../models/Fees.js';
@@ -37,7 +37,7 @@ mount('/classes', Class, {
   searchable: ['name.en', 'name.bn'],
   filterable: ['academicYear'],
   defaultSort: { numericLevel: 1 },
-  guardRemove: blockIfInUse([[Section, 'class', 'sections'], [Student, 'class', 'students'], [Enrollment, 'class', 'enrollment history'], [Subject, 'class', 'subjects'], [FeePlan, 'class', 'fee plans'], [FeeStructure, 'class', 'fee types']]),
+  guardRemove: blockIfInUse([[Section, 'class', 'sections'], [Student, 'class', 'students'], [Enrollment, 'class', 'enrollment history'], [Subject, 'class', 'subjects'], [TimetableSlot, 'class', 'timetable slots'], [ExamPaper, 'class', 'exam marks setup'], [FeePlan, 'class', 'fee plans'], [FeeStructure, 'class', 'fee types']]),
 });
 
 mount('/sections', Section, {
@@ -53,7 +53,7 @@ mount('/subjects', Subject, {
   searchable: ['name.en', 'name.bn', 'code'],
   filterable: ['class', 'isOptional'],
   defaultSort: { 'name.en': 1 },
-  guardRemove: blockIfInUse([[Mark, 'subject', 'exam marks'], [TimetableSlot, 'subject', 'timetable slots']]),
+  guardRemove: blockIfInUse([[Mark, 'subject', 'exam marks'], [ExamPaper, 'subject', 'exam marks setup'], [TimetableSlot, 'subject', 'timetable slots']]),
 });
 
 export default router;
