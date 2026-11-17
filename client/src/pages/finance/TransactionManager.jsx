@@ -10,6 +10,7 @@ import { t as bt } from '../../utils/bilingual.js';
 import DataTable from '../../components/ui/DataTable.jsx';
 import RequestReversal, { DuplicateWarning } from './FinancialControls.jsx';
 import Modal from '../../components/ui/Modal.jsx';
+import QuickDates from '../../components/ui/QuickDates.jsx';
 import ImageUpload from '../../components/ui/ImageUpload.jsx';
 import { Field, TextInput, Select } from '../../components/ui/Field.jsx';
 import TransactionVoucher from './TransactionVoucher.jsx';
@@ -195,6 +196,7 @@ export default function TransactionManager({ type }) {
       {/* Filters + add */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-2">
+          <QuickDates from={filters.from} to={filters.to} onChange={(range) => setFilters((f) => ({ ...f, ...range }))} />
           <label className="text-sm">
             <span className="mb-1 block text-xs font-medium text-slate-500">{t('finance.from')}</span>
             <input

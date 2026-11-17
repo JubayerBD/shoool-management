@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useToast } from '../../components/ui/Toast.jsx';
 import { Field, TextInput } from '../../components/ui/Field.jsx';
 import { schoolDate } from '../../utils/schoolDate.js';
+import QuickDates from '../../components/ui/QuickDates.jsx';
 
 const panel = 'rounded-xl border border-slate-200 bg-white p-5 shadow-sm';
 const button = 'rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50';
@@ -76,7 +77,7 @@ export default function NetProfit() {
     <div><h2 className="text-xl font-bold">{tr('Net profit & distribution', 'নিট লাভ ও বণ্টন')}</h2><p className="mt-2 text-sm text-slate-500">{tr('Selected income − selected expenses = net profit. Partner investments are always excluded.', 'নির্বাচিত আয় − নির্বাচিত ব্যয় = নিট লাভ। অংশীদারদের বিনিয়োগ সর্বদা বাদ থাকবে।')}</p></div>
     {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     {user.role === 'admin' && <form onSubmit={calculate} className={`${panel} space-y-5`}>
-      <div className="grid gap-4 sm:grid-cols-2"><Field label={tr('From', 'শুরু')} required><TextInput type="date" required max={today} disabled={busy} value={config.from} onChange={(e) => change({ ...config, from: e.target.value })} /></Field><Field label={tr('To', 'শেষ')} required><TextInput type="date" required max={today} min={config.from} disabled={busy} value={config.to} onChange={(e) => change({ ...config, to: e.target.value })} /></Field></div>
+      <QuickDates disabled={busy} from={config.from} to={config.to} onChange={(range) => change({ ...config, ...range })} options={['today', 'month', 'year']} /><div className="grid gap-4 sm:grid-cols-2"><Field label={tr('From', 'শুরু')} required><TextInput type="date" required max={today} disabled={busy} value={config.from} onChange={(e) => change({ ...config, from: e.target.value })} /></Field><Field label={tr('To', 'শেষ')} required><TextInput type="date" required max={today} min={config.from} disabled={busy} value={config.to} onChange={(e) => change({ ...config, to: e.target.value })} /></Field></div>
       <div className="grid gap-5 sm:grid-cols-2">{[['income', 'incomeCategories', tr('Income to include', 'অন্তর্ভুক্ত আয়')], ['expense', 'expenseCategories', tr('Expenses to include', 'অন্তর্ভুক্ত ব্যয়')]].map(([type, key, title]) => <fieldset key={key} disabled={busy} className="space-y-2"><legend className="mb-2 font-semibold">{title}</legend><div className="mb-2 flex gap-4 text-xs text-brand-600"><button type="button" onClick={() => change({ ...config, [key]: options[type].map((c) => c.id) })}>{tr('Select all', 'সব নির্বাচন')}</button><button type="button" onClick={() => change({ ...config, [key]: [] })}>{tr('Clear all', 'সব বাদ')}</button></div>{options[type].map((c) => <label className="flex items-center gap-2 text-sm" key={c.id}><input type="checkbox" checked={config[key].includes(c.id)} onChange={() => toggle(key, c.id)} />{name(c.name)}</label>)}</fieldset>)}</div>
       <button className={button} disabled={busy}>{busy ? tr('Working…', 'অপেক্ষা করুন…') : tr('Calculate net profit', 'নিট লাভ হিসাব করুন')}</button>
     </form>}

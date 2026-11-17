@@ -678,4 +678,10 @@ test('the office chooses the money received date; reports follow it', async () =
   assert.equal(schoolDate(new Date(moved.item.paidAt)), lastWeek);
   assert.equal(await fees(today), beforeToday);
   assert.equal((await request(`/fees/payments/${now.item.id}/date`, admin, { paidAt: tomorrow }, 'PATCH')).status, 400);
+  // Fee collections list: filter by received date (the "Today" button sends from=to=today).
+  const onDay = async (day) => (await request(`/fees/payments?from=${day}&to=${day}&student=${learner.id}`, accountant)).items.map((p) => p.id);
+  assert.deepEqual(await onDay(yesterday), [late.item.id]);
+  assert.deepEqual(await onDay(lastWeek), [now.item.id]);
+  assert.deepEqual(await onDay(today), []);
+  assert.equal((await request(`/fees/payments?from=${today}&to=${yesterday}`, accountant)).status, 400, 'from after to');
 });

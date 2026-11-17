@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import api from '../../api/client.js';
 import DataTable from '../../components/ui/DataTable.jsx';
 import { Select } from '../../components/ui/Field.jsx';
+import FeeCollections from './FeeCollections.jsx';
 import { useFeeText, useFeeReferences, Notice, ErrorNotice, Summary, buttonClass, recordId } from './FeeUI.jsx';
 
 export default function DuesReports() {
@@ -22,7 +23,7 @@ export default function DuesReports() {
     const url = URL.createObjectURL(new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }));
     const a = document.createElement('a'); a.href = url; a.download = `fee-dues-${report.asOf}.csv`; a.click(); URL.revokeObjectURL(url);
   };
-  return <div className="space-y-4"><Notice>{f('reportsHint')}</Notice><ErrorNotice error={error || refs.error} />
+  return <div className="space-y-4"><FeeCollections /><Notice>{f('reportsHint')}</Notice><ErrorNotice error={error || refs.error} />
     <div className="flex flex-wrap gap-3 no-print">
       <Select aria-label={f('year')} className="!w-auto" value={filters.academicYear || ''} onChange={(e) => setFilters({ ...filters, academicYear: e.target.value })}><option value="">{f('all')} · {f('year')}</option>{refs.years.map((item) => <option key={recordId(item)} value={recordId(item)}>{bt(item.name)}</option>)}</Select>
       <Select aria-label={f('class')} className="!w-auto" value={filters.class || ''} onChange={(e) => setFilters({ ...filters, class: e.target.value })}><option value="">{f('all')} · {f('class')}</option>{refs.classes.map((item) => <option key={recordId(item)} value={recordId(item)}>{bt(item.name)}</option>)}</Select>

@@ -8,7 +8,7 @@ import { ApiError } from '../../utils/ApiError.js';
 import { Student } from '../../models/People.js';
 import { createInvoice, nextReceiptNo, withBillingTransaction } from '../../services/billing.js';
 import { paginated } from '../../utils/pagination.js';
-import { parseDay, schoolDate } from '../../utils/financeDates.js';
+import { parseDay, rangeFilter, schoolDate } from '../../utils/financeDates.js';
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Dates must use YYYY-MM-DD');
 /** A date the office picks (the money received date): a real day, not in the future. */
@@ -192,8 +192,8 @@ router.patch('/payments/:id/date', requireAuth, requireRole('admin'), validate(z
 });
 
 router.get('/payments', requireAuth, async (req, res) => {
-  const { student, invoice } = req.query;
-  const filter = studentScope(req.user, student);
+  const { student, invoice, from, to } = req.query;
+  const filter = { ...studentScope(req.user, student), ...rangeFilter('paidAt', from, to) }; // by received date
   if (invoice) filter.invoice = invoice;
   res.json(await paginated(Payment, filter, req.query, { path: 'student', select: 'name admissionNo' }, { paidAt: -1 }));
 });

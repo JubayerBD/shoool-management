@@ -1,4 +1,3 @@
-import { schoolDate } from '../../utils/schoolDate.js';
 import { getAll } from '../../api/getAll.js';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -6,23 +5,14 @@ import api from '../../api/client.js';
 import { t as bt } from '../../utils/bilingual.js';
 import { Select } from '../../components/ui/Field.jsx';
 import { SummaryCards, HeadCharts } from './FinanceCharts.jsx';
-
-function presets() {
-  const today = schoolDate();
-  return {
-    month: { from: today.slice(0, 7) + '-01', to: today },
-    year: { from: today.slice(0, 4) + '-01-01', to: today },
-    all: { from: '', to: '' },
-  };
-}
+import QuickDates, { quickRange } from '../../components/ui/QuickDates.jsx';
 
 export default function FinanceReports() {
   const { t, i18n } = useTranslation();
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
   const taka = t('common.taka');
 
-  const P = presets();
-  const [range, setRange] = useState(P.month);
+  const [range, setRange] = useState(() => quickRange('month'));
   const [typeFilter, setTypeFilter] = useState('');
   const [summary, setSummary] = useState(null);
   const [analytics, setAnalytics] = useState(null);
@@ -54,24 +44,13 @@ export default function FinanceReports() {
     load();
   }, [load]);
 
-  const applyPreset = (key) => setRange(P[key]);
 
   return (
     <div className="space-y-5">
       {/* Controls */}
       <div className="flex flex-wrap items-end justify-between gap-3 no-print">
         <div className="flex flex-wrap items-end gap-2">
-          <div className="flex gap-1">
-            <button type="button" onClick={() => applyPreset('month')} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100">
-              {t('finance.thisMonth')}
-            </button>
-            <button type="button" onClick={() => applyPreset('year')} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100">
-              {t('finance.thisYear')}
-            </button>
-            <button type="button" onClick={() => applyPreset('all')} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100">
-              {t('finance.allTime')}
-            </button>
-          </div>
+          <QuickDates from={range.from} to={range.to} onChange={setRange} options={['today', 'month', 'year', 'all']} />
           <label className="text-sm">
             <span className="mb-1 block text-xs font-medium text-slate-500">{t('finance.from')}</span>
             <input type="date" value={range.from} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
