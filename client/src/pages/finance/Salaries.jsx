@@ -244,8 +244,8 @@ export default function Salaries() {
               onChange={(e) => setForm((f) => ({ ...f, deductions: e.target.value }))}
             />
           </Field>
-          <Field label={t('finance.voucherNo')} required>
-            <TextInput required maxLength={200} pattern={'.*\\S.*'} value={form.reference} onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} />
+          <Field label={t('finance.voucherNo')}>
+            <TextInput maxLength={200} value={form.reference} onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} />
           </Field>
           <Field label={t('finance.method')}>
             <Select value={form.method} onChange={(e) => setForm((f) => ({ ...f, method: e.target.value }))}>

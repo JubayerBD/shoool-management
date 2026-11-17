@@ -149,7 +149,7 @@ test('finance entries enforce positive 2-decimal amounts, matching categories an
 
   const staff = await Teacher.create({ employeeId: 'SEC-T1', name: { en: 'Staff' } });
   const salary = (body) => request('/finance/salaries', accountant, { staff: staff.id, month: '2026-10', basic: 1000, allowances: 0, deductions: 0, reference: '  SAL-001  ', ...body });
-  for (const reference of [undefined, '', '   ', 123, 'x'.repeat(201)]) assert.equal((await salary({ reference })).status, 400);
+  for (const reference of [123, 'x'.repeat(201)]) assert.equal((await salary({ reference })).status, 400); // voucher no. is optional but must be text
   assert.equal((await salary({ month: 'October' })).status, 400);
   assert.equal((await salary({ staff: String(new mongoose.Types.ObjectId()) })).status, 400);
   assert.equal((await salary({ basic: -1 })).status, 400);

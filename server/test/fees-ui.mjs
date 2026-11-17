@@ -133,11 +133,17 @@ try {
   dialog = page.getByRole('dialog');
   await dialog.getByText('Fee Invoice', { exact: true }).waitFor();
   await printPdf('invoice.pdf');
+  // One date only: the day the money was received (e.g. paid yesterday, entered today).
+  const yesterday = schoolDate(new Date(Date.now() - 86400000));
+  for (const label of ['Due date', 'Invoice date']) assert.equal(await dialog.getByText(label, { exact: true }).count(), 0, `no ${label} on the invoice`);
   await dialog.getByLabel(/^Invoice No \(physical\)/).fill('PHY-0001');
+  assert.equal(await dialog.getByLabel(/^Received date/).inputValue(), today);
+  await dialog.getByLabel(/^Received date/).fill(yesterday);
   await dialog.locator('input[type=number]').fill('1000');
   await dialog.getByRole('button', { name: 'Record payment', exact: true }).click();
   await dialog.getByText('Money Receipt', { exact: true }).first().waitFor();
   assert.equal(await Payment.countDocuments(), 1);
+  assert.equal(schoolDate((await Payment.findOne()).paidAt), yesterday, 'counted on the received date');
   await page.screenshot({ path: path.join(output, 'payment-receipt.png'), fullPage: true });
   await printPdf('payment-receipt.pdf');
   await dialog.getByRole('button', { name: 'Close', exact: true }).click();

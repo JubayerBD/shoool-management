@@ -30,7 +30,6 @@ export default function GenerateInvoiceModal({ structure, onClose, onCreated }) 
   const [students, setStudents] = useState([]);
   const [student, setStudent] = useState('');
   const [month, setMonth] = useState(thisMonth());
-  const [dueDate, setDueDate] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Reset + load classes when opened; default the class filter to the structure's class.
@@ -38,7 +37,6 @@ export default function GenerateInvoiceModal({ structure, onClose, onCreated }) 
     if (!structure) return;
     setStudent('');
     setMonth(thisMonth());
-    setDueDate('');
     setClassId(structClassId || '');
     getAll('/academics/classes', { params: { limit: 200 } }).then((r) => setClasses(r.data.items));
   }, [structure, structClassId]);
@@ -60,7 +58,6 @@ export default function GenerateInvoiceModal({ structure, onClose, onCreated }) 
       const res = await api.post('/fees/invoices', {
         student,
         period: { en: monthLabel(month), bn: '' },
-        ...(dueDate ? { dueDate } : {}),
         items: [
           {
             feeStructure: structure.id || structure._id,
@@ -129,14 +126,9 @@ export default function GenerateInvoiceModal({ structure, onClose, onCreated }) 
             <StudentPicker students={students} value={student} onChange={setStudent} />
           </Field>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label={t('fees.month')}>
-              <TextInput type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
-            </Field>
-            <Field label={t('fees.dueDate')}>
-              <TextInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </Field>
-          </div>
+          <Field label={t('fees.month')}>
+            <TextInput type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+          </Field>
         </form>
       )}
     </Modal>

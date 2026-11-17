@@ -8,11 +8,29 @@ import { useToast } from '../../components/ui/Toast.jsx';
 import { t as bt } from '../../utils/bilingual.js';
 import PaymentReceipt from './PaymentReceipt.jsx';
 import { due, useFeeText } from './FeeUI.jsx';
+import { schoolDate } from '../../utils/schoolDate.js';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { apiError } from '../../utils/apiError.js';
 import PrintDocument, { DocFields, DocItems, DocNote, DocWords, useDocText } from '../../components/print/PrintDocument.jsx';
 
 const METHODS = ['cash', 'bkash', 'nagad', 'rocket', 'card', 'bank'];
 
 const STAMPS = { unpaid: 'stampUnpaid', partial: 'stampPartial', paid: 'stampPaid', cancelled: 'stampCancelled' };
+const emptyPay = (amount = '') => ({ amount, invoiceNo: '', method: 'cash', transactionRef: '', note: '', paidAt: schoolDate() });
+
+/** Small "change date" control: a date box with Save / Cancel. */
+function DateEditor({ value, label, onSave, onCancel }) {
+  const { t } = useTranslation();
+  const [day, setDay] = useState(value);
+  const [busy, setBusy] = useState(false);
+  return (
+    <span className="no-print inline-flex flex-wrap items-center gap-2">
+      <input type="date" aria-label={label} value={day} max={schoolDate()} onChange={(e) => setDay(e.target.value)} className="rounded border border-slate-300 px-2 py-0.5 text-sm" />
+      <button type="button" disabled={busy || !day} onClick={async () => { setBusy(true); try { await onSave(day); } finally { setBusy(false); } }} className="rounded bg-brand-600 px-2 py-0.5 text-xs font-semibold text-white disabled:opacity-50">{t('common.save')}</button>
+      <button type="button" disabled={busy} onClick={onCancel} className="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-600">{t('common.cancel')}</button>
+    </span>
+  );
+}
 
 export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChanged }) {
   const [correction, setCorrection] = useState(null);
@@ -21,11 +39,14 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
   const { f } = useFeeText();
   const { d, date } = useDocText();
   const lang = i18n.language?.startsWith('bn') ? 'bn' : 'en';
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const [editing, setEditing] = useState(null); // id of the payment whose date is being changed
 
   const [invoice, setInvoice] = useState(null);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [pay, setPay] = useState({ amount: '', invoiceNo: '', method: 'cash', transactionRef: '', note: '' });
+  const [pay, setPay] = useState(emptyPay);
   const [saving, setSaving] = useState(false);
   const [paymentKey, setPaymentKey] = useState(() => crypto.randomUUID());
   const [receipt, setReceipt] = useState(null);
@@ -39,7 +60,7 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
       setInvoice(res.data.item);
       setPayments(res.data.payments || []);
       const balance = due(res.data.item);
-      setPay({ amount: balance > 0 ? String(balance) : '', invoiceNo: '', method: 'cash', transactionRef: '', note: '' });
+      setPay(emptyPay(balance > 0 ? String(balance) : ''));
       return res.data;
     } finally {
       setLoading(false);
@@ -62,10 +83,11 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
       const recorded = await api.post('/fees/payments', {
         invoice: invoiceId,
         amount: Number(pay.amount),
-        invoiceNo: pay.invoiceNo.trim(),
+        ...(pay.invoiceNo.trim() ? { invoiceNo: pay.invoiceNo.trim() } : {}),
         method: pay.method,
         transactionRef: pay.transactionRef,
         note: pay.note,
+        paidAt: pay.paidAt,
         idempotencyKey: paymentKey,
       });
       setPaymentKey(crypto.randomUUID());
@@ -81,6 +103,19 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
   };
 
   const balance = invoice ? due(invoice) : 0;
+  const lastReceived = payments.find((p) => !p.voidedAt)?.paidAt; // newest first
+
+  const changeDate = async (url, body) => {
+    try {
+      await api.patch(url, body);
+      push(f('dateChanged'));
+      setEditing(null);
+      await load();
+      onChanged?.();
+    } catch (err) {
+      push(apiError(err), 'error');
+    }
+  };
 
   return (
     <><Modal open={open} onClose={onClose} size="lg" title={t('fees.invoiceDetail')}>
@@ -97,11 +132,10 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
               [d('student'), bt(invoice.student?.name, lang)],
               [f('systemInvoiceNo'), invoice.invoiceNo],
               [d('admissionNo'), invoice.student?.admissionNo],
-              [d('invoiceDate'), invoice.historicalImport ? '—' : date(invoice.billingDate || invoice.createdAt)],
               [d('classSection'), [bt((invoice.class || invoice.student?.class)?.name, lang), bt(invoice.student?.section?.name, lang)].filter(Boolean).join(' / ')],
               [d('period'), bt(invoice.period, lang)],
               [d('roll'), invoice.student?.roll],
-              [d('dueDate'), invoice.dueDate && date(invoice.dueDate)],
+              [d('receivedDate'), lastReceived ? date(lastReceived) : '—'],
             ]} />
             <DocItems
               items={invoice.items.map((it) => ({ label: bt(it.title, lang), amount: it.amount }))}
@@ -130,7 +164,10 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
                     <span className="text-slate-600">
                       <button className="mr-2 text-brand-600 underline no-print" onClick={() => setReceipt(p)}>{p.receiptNo || f('receipt')}</button>
                       {canPay && invoice.status !== 'cancelled' && <button className="mr-2 text-brand-600 underline no-print" onClick={() => setCorrection(p)}>{f('correctPayment')}</button>}
-                      {p.paidAt ? new Date(p.paidAt).toLocaleDateString() : '—'} · {t(`fees.methods.${p.method}`)}
+                      {editing === (p.id || p._id)
+                        ? <DateEditor value={schoolDate(new Date(p.paidAt))} label={f('receivedDate')} onCancel={() => setEditing(null)} onSave={(day) => changeDate(`/fees/payments/${p.id || p._id}/date`, { paidAt: day })} />
+                        : <>{f('receivedOn')}: {p.paidAt ? date(p.paidAt) : '—'}{isAdmin && !p.voidedAt && <button type="button" onClick={() => setEditing(p.id || p._id)} className="no-print ml-1 text-xs text-brand-600 underline">{f('changeDate')}</button>}</>}
+                      {' · '}{t(`fees.methods.${p.method}`)}
                       {p.transactionRef ? ` · ${p.transactionRef}` : ''}
                       {p.invoiceNo && <span className="block text-xs">{f('physicalInvoiceNo')}: {p.invoiceNo}</span>}
                     </span>
@@ -153,8 +190,12 @@ export default function InvoiceDetail({ open, onClose, invoiceId, canPay, onChan
               <p className="mb-3 text-sm text-slate-600">{lang === 'bn' ? 'এখানে শুধু এখন জমা দেওয়া টাকা লিখুন। অবশিষ্ট টাকা বকেয়া থাকবে।' : 'Enter only the amount received now. The remaining amount will stay due.'}</p>
               <p className="mb-3 text-sm font-semibold text-amber-700">{lang === 'bn' ? 'এই পেমেন্টের পরে বকেয়া' : 'Remaining due after this payment'}: {taka}{Math.max(0, balance - (Number(pay.amount) || 0)).toLocaleString()}</p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label={f('physicalInvoiceNo')} required>
-                  <TextInput required pattern=".*\S.*" maxLength={100} value={pay.invoiceNo} onChange={(e) => setPay((p) => ({ ...p, invoiceNo: e.target.value }))} placeholder={lang === 'bn' ? 'এই পেমেন্টের রসিদ বইয়ের নম্বর' : 'Receipt-book number for this payment'} />
+                <Field label={f('physicalInvoiceNo')}>
+                  <TextInput maxLength={100} value={pay.invoiceNo} onChange={(e) => setPay((p) => ({ ...p, invoiceNo: e.target.value }))} placeholder={lang === 'bn' ? 'এই পেমেন্টের রসিদ বইয়ের নম্বর' : 'Receipt-book number for this payment'} />
+                </Field>
+                <Field label={f('receivedDate')} required>
+                  <TextInput type="date" required max={schoolDate()} value={pay.paidAt} onChange={(e) => setPay((p) => ({ ...p, paidAt: e.target.value }))} />
+                  <span className="mt-1 block text-xs text-slate-500">{f('receivedDateHint')}</span>
                 </Field>
                 <Field label={t('fees.payAmount')} required>
                   <TextInput

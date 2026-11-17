@@ -25,7 +25,7 @@ function shortText(value, label, max, required = false) {
 export async function manualEntry(type, raw, session = null) {
   if (!['income', 'expense'].includes(type)) throw ApiError.badRequest('Choose income or expense');
   const amount = moneyCents(raw.amount) / 100;
-  const reference = shortText(raw.reference, type === 'income' ? 'Invoice no.' : 'Voucher no.', 200, true);
+  const reference = shortText(raw.reference ?? '', type === 'income' ? 'Invoice no.' : 'Voucher no.', 200); // optional
   const date = raw.date === undefined ? new Date() : /^\d{4}-\d{2}-\d{2}$/.test(String(raw.date)) ? parseDay(raw.date) : new Date(raw.date);
   if (!Number.isFinite(+date)) throw ApiError.badRequest('Invalid transaction date');
   const body = { amount, reference, date, method: raw.method || 'cash', note: shortText(raw.note, 'Note', 2000), receiptUrl: shortText(raw.receiptUrl, 'Receipt URL', 2000),
@@ -46,6 +46,7 @@ export async function manualEntry(type, raw, session = null) {
 
 export async function duplicateDocuments(type, reference, excludeId, session = null) {
   if (!['income', 'expense'].includes(type)) throw ApiError.badRequest('Choose income or expense');
+  if (typeof reference !== 'string' || !reference.trim()) return []; // no number given: nothing to compare
   const cleaned = shortText(reference, 'Document no.', 200, true);
   const escaped = cleaned.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').split(/\s+/).join('\\s+');
   const filter = { reference: new RegExp(`^${escaped}$`, 'i') };
@@ -57,6 +58,7 @@ export function duplicateWarning(matches) {
   throw new ApiError(409, 'This document number has already been used. Check the existing entries before saving.', { code: 'DUPLICATE_DOCUMENT', matches });
 }
 async function lockDocument(type, reference, session) {
+  if (!reference?.trim()) return;
   const key = `document:${type}:${digest(reference.trim().toLowerCase().replace(/\s+/g, ' '))}`;
   await FinancialLock.updateOne({ _id: key }, { $inc: { revision: 1 } }, { upsert: true, session });
 }

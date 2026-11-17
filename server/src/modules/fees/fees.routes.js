@@ -8,7 +8,21 @@ import { ApiError } from '../../utils/ApiError.js';
 import { Student } from '../../models/People.js';
 import { createInvoice, nextReceiptNo, withBillingTransaction } from '../../services/billing.js';
 import { paginated } from '../../utils/pagination.js';
-import { parseDay } from '../../utils/financeDates.js';
+import { parseDay, schoolDate } from '../../utils/financeDates.js';
+
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Dates must use YYYY-MM-DD');
+/** A date the office picks (the money received date): a real day, not in the future. */
+function pickedDay(value, label) {
+  parseDay(value);
+  if (value > schoolDate()) throw ApiError.badRequest(`${label} cannot be in the future`);
+  if (value < '2000-01-01') throw ApiError.badRequest(`${label} is too far in the past`);
+  return value;
+}
+/** Money received today keeps the current time; an earlier day is stored at midday (Bangladesh time) of that day. */
+function receivedAt(value) {
+  pickedDay(value, 'Received date');
+  return value === schoolDate() ? new Date() : new Date(`${value}T12:00:00.000+06:00`);
+}
 
 import workflowRoutes from './workflow.routes.js';
 import { FeePlan, BillingSchedule } from '../../models/FeeWorkflow.js';
@@ -95,13 +109,15 @@ router.get('/invoices/:id', requireAuth, async (req, res) => {
 
 /* ---- Payments ---- */
 const paymentSchema = z.object({
-  invoiceNo: z.string().trim().min(1, 'Invoice No is required').max(100),
+  // Receipt-book number: optional. Left blank, it is not stored (the number must be unique when given).
+  invoiceNo: z.string().trim().max(100).optional().transform((value) => value || undefined),
   invoice: z.string().min(1),
   amount: z.number().finite().min(0.01).multipleOf(0.01),
   idempotencyKey: z.string().uuid().optional(),
   method: z.enum(['cash', 'bkash', 'nagad', 'rocket', 'card', 'bank']).default('cash'),
   transactionRef: z.string().optional(),
   note: z.string().optional(),
+  paidAt: day.optional(), // the day the money was received; today when left out
 });
 
 router.post(
@@ -125,6 +141,7 @@ router.post(
       }
       return null;
     };
+    const paidAt = req.body.paidAt ? receivedAt(req.body.paidAt) : new Date();
     let result;
     try {
       result = await withBillingTransaction(async (session) => {
@@ -141,6 +158,7 @@ router.post(
 
       const [payment] = await Payment.create([{
         ...req.body,
+        paidAt,
         student: invoice.student,
         receivedBy: req.user._id,
         receiptNo: await nextReceiptNo(),
@@ -161,6 +179,17 @@ router.post(
     res.status(201).json(result);
   }
 );
+
+// Fix the received date of a payment that was recorded with the wrong day. Finance reports follow it.
+router.patch('/payments/:id/date', requireAuth, requireRole('admin'), validate(z.object({ paidAt: day })), async (req, res) => {
+  const paidAt = receivedAt(req.body.paidAt);
+  const item = await Payment.findById(req.params.id);
+  if (!item) throw ApiError.notFound('Payment not found');
+  if (item.voidedAt) throw ApiError.badRequest('A voided payment cannot be changed');
+  item.paidAt = paidAt;
+  await item.save();
+  res.json({ item });
+});
 
 router.get('/payments', requireAuth, async (req, res) => {
   const { student, invoice } = req.query;

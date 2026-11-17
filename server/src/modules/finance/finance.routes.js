@@ -20,8 +20,10 @@ import { partnerIncome, PARTNER_INCOME_CATEGORY } from '../../services/partnerIn
 const router = Router();
 const finance = [requireAuth, requireRole('admin', 'accountant')];
 
+/** Optional document number (voucher no.): blank is allowed. */
 function documentNumber(value, label) {
-  if (typeof value !== 'string' || !value.trim()) throw ApiError.badRequest(`${label} is required`);
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') throw ApiError.badRequest(`${label} must be text`);
   if (value.trim().length > 200) throw ApiError.badRequest(`${label} must be at most 200 characters`);
   return value.trim();
 }

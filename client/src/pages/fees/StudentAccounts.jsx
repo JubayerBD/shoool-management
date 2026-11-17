@@ -68,8 +68,6 @@ export default function StudentAccounts({ studentId, onBack }) {
       <DataTable rows={account.invoices} columns={[
         { key: 'invoiceNo', header: f('invoice') },
         { key: 'items', header: f('components'), render: (row) => <ul>{row.items.map((item, index) => <li key={index}>{bt(item.title)}: {money(item.amount)}</li>)}</ul> },
-        { key: 'date', header: f('invoiceDate'), render: (row) => row.historicalImport ? '—' : row.billingDate || schoolDate(row.createdAt) },
-        { key: 'dueDate', header: f('dueDate'), render: (row) => row.dueDate ? schoolDate(row.dueDate) : '-' },
         { key: 'paidAmount', header: f('paid'), render: (row) => money(row.paidAmount) }, { key: 'totalAmount', header: f('payable'), render: (row) => money(row.totalAmount) },
         { key: 'due', header: f('outstanding'), render: (row) => money(due(row)) },
         { key: 'status', header: f('status'), render: (row) => row.voidedAt ? f('voided') : t(`fees.statusValues.${row.status}`) },
@@ -80,7 +78,7 @@ export default function StudentAccounts({ studentId, onBack }) {
       <p className="my-3 text-sm text-slate-500">{f('invoicePaymentHint')}</p>
       <DataTable rows={[...account.payments].reverse()} columns={[
         { key: 'feePeriod', header: t('fees.period') },
-        { key: 'date', header: f('date'), render: (row) => schoolDate(row.paidAt) },
+        { key: 'date', header: f('receivedDate'), render: (row) => row.paidAt ? schoolDate(new Date(row.paidAt)) : '—' },
         { key: 'invoice', header: f('invoice'), render: (row) => account.invoices.find((bill) => recordId(bill) === recordId(row.invoice))?.invoiceNo },
         { key: 'fees', header: f('components'), render: (row) => account.invoices.find((bill) => recordId(bill) === recordId(row.invoice))?.items.map((item) => bt(item.title)).join(', ') },
         { key: 'amount', header: f('payment'), render: (row) => <span>{money(row.amount)}{row.voidedAt && <span className="block text-xs text-red-700">{f('voided')} · {money(row.voidedAmount)}</span>}</span> },

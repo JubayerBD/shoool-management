@@ -108,14 +108,20 @@ test('void requests require admin review and atomically reverse invoices and eve
   await FeeAdjustment.deleteMany({ student: learner.id });
 });
 
-test('fee invoices get system numbers and installment payments require separate physical invoice numbers', async () => {
+test('fee invoices get system numbers; physical invoice numbers are optional but never reused', async () => {
   const learner = await Student.create({name:{en:'Installment learner'}, admissionNo:`INST-${randomUUID()}`});
   const created = await request('/fees/invoices', admin, { ...invoiceBody(learner, 1000), invoiceNo: 'NOT-A-SYSTEM-NUMBER' });
   assert.equal(created.status, 201);
   assert.match(created.item.invoiceNo, /^INV-\d+$/);
   const billId=created.item.id;
-  for (const invoiceNo of [undefined, '', '   ', 123, 'x'.repeat(101)]) {
+  for (const invoiceNo of [123, 'x'.repeat(101)]) {
     assert.equal((await request('/fees/payments', admin, {invoice:billId, amount:800, invoiceNo})).status,400);
+  }
+  // Left blank: accepted, and several blank payments do not clash with each other.
+  const blankBill = await createInvoice(invoiceBody(learner, 300));
+  for (const invoiceNo of [undefined, '', '   ']) {
+    const paid = await request('/fees/payments', admin, {invoice:blankBill.id, amount:100, invoiceNo});
+    assert.equal(paid.status, 201); assert.equal(paid.item.invoiceNo, undefined);
   }
   const first=await request('/fees/payments', admin, {invoice:billId, amount:800, invoiceNo:'  000081-book  '});
   assert.equal(first.status,201); assert.equal(first.item.invoiceNo,'000081-book');
@@ -136,11 +142,16 @@ test('fee invoices get system numbers and installment payments require separate 
   await Payment.deleteMany({student:learner.id});
 });
 
-test('manual income and expenses require a nonblank physical document number on create and edit', async () => {
+test('manual income and expenses take an optional physical document number on create and edit', async () => {
   for (const [endpoint, reference] of [['income', '000123-INV'], ['expenses', '000456-VCH']]) {
     const path = `/finance/${endpoint}`;
-    for (const value of [undefined, '', '   ', 123, 'x'.repeat(201)]) {
+    for (const value of [123, 'x'.repeat(201)]) {
       assert.equal((await request(path, admin, { amount: 10, reference: value })).status, 400);
+    }
+    for (const value of [undefined, '', '   ']) { // optional: blank numbers are saved and never flagged as duplicates
+      const blank = await request(path, admin, { amount: 10, reference: value, date: '2000-01-01' });
+      assert.equal(blank.status, 201); assert.equal(blank.item.reference, '');
+      await (endpoint === 'income' ? Income : Expense).findByIdAndDelete(blank.item.id);
     }
     const created = await request(path, admin, { amount: 10, reference: `  ${reference}  `, date: '2000-01-01' });
     assert.equal(created.status, 201);
@@ -173,7 +184,7 @@ test('partner capital controls shares, preserves deposit history, and safely ret
   assert.equal(empty.totalCapital, 0);
   assert.ok(empty.items.every((p) => p.percentage === 0 && p.profit === 0));
   const deposit = { amount: 100000, date: schoolDate(), invoiceNo: '  001208  ', requestKey: randomUUID() };
-  for (const invoiceNo of [undefined, '', '   ', 1208, 'x'.repeat(201)]) {
+  for (const invoiceNo of [1208, 'x'.repeat(201)]) { // optional, but must be text when given
     assert.equal((await request(`/partners/${a.id}/deposits`, admin, { ...deposit, invoiceNo })).status, 400);
   }
   const results = await Promise.all([0, 1].map(() => request(`/partners/${a.id}/deposits`, admin, deposit)));
@@ -638,4 +649,33 @@ test('net profit excludes capital, honors categories, snapshots allocations and 
   const raced = await Promise.all([0, 1].map(() => request('/finance/profit/distributions', admin, { ...next, previewHash: nextPreview.previewHash, requestKey: randomUUID() })));
   assert.deepEqual(raced.map((r) => r.status).sort(), [201, 409]);
   assert.equal(await ProfitDistribution.countDocuments(), 2);
+});
+
+test('the office chooses the money received date; reports follow it', async () => {
+  const accountant = await User.create({ name: { en: 'Dates accountant' }, email: `dates-${randomUUID()}@test.local`, passwordHash: 'unused', role: 'accountant' });
+  const learner = await Student.create({ name: { en: 'Dates learner' }, admissionNo: `DATES-${randomUUID()}` });
+  const today = schoolDate();
+  const shift = (days) => schoolDate(new Date(Date.now() + days * 86400000));
+  const yesterday = shift(-1), tomorrow = shift(1), lastWeek = shift(-7);
+  const fees = async (day) => (await request(`/finance/summary?from=${day}&to=${day}`)).summary.income.fees;
+
+  const plain = await request('/fees/invoices', accountant, invoiceBody(learner, 1000));
+
+  // Received date: paid yesterday, recorded today -> counted yesterday.
+  const beforeYesterday = await fees(yesterday), beforeToday = await fees(today);
+  assert.equal((await request('/fees/payments', accountant, { invoice: plain.item.id, amount: 100, paidAt: tomorrow })).status, 400, 'no future dates');
+  const late = await request('/fees/payments', accountant, { invoice: plain.item.id, amount: 300, paidAt: yesterday });
+  assert.equal(late.status, 201);
+  assert.equal(schoolDate(new Date(late.item.paidAt)), yesterday);
+  assert.equal(await fees(yesterday), beforeYesterday + 300);
+  assert.equal(await fees(today), beforeToday, 'not counted on the day it was typed in');
+  const now = await request('/fees/payments', accountant, { invoice: plain.item.id, amount: 200 });
+  assert.equal(schoolDate(new Date(now.item.paidAt)), today, 'today when no date is chosen');
+
+  // Only an admin can move an existing payment to another day; reports move with it.
+  assert.equal((await request(`/fees/payments/${now.item.id}/date`, accountant, { paidAt: lastWeek }, 'PATCH')).status, 403);
+  const moved = await request(`/fees/payments/${now.item.id}/date`, admin, { paidAt: lastWeek }, 'PATCH');
+  assert.equal(schoolDate(new Date(moved.item.paidAt)), lastWeek);
+  assert.equal(await fees(today), beforeToday);
+  assert.equal((await request(`/fees/payments/${now.item.id}/date`, admin, { paidAt: tomorrow }, 'PATCH')).status, 400);
 });

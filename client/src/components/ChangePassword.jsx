@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import PasswordInput from './ui/PasswordInput.jsx';
 import { useTranslation } from 'react-i18next';
 import api from '../api/client.js';
 import Modal from './ui/Modal.jsx';
-import { Field, TextInput } from './ui/Field.jsx';
+import { Field } from './ui/Field.jsx';
 import { useToast } from './ui/Toast.jsx';
 
 const empty = { current: '', next: '', repeat: '' };
@@ -56,13 +57,13 @@ export default function ChangePassword({ open, onClose }) {
       <form id="change-password-form" onSubmit={submit} className="space-y-4">
         {error && <div role="alert" className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-600">{error}</div>}
         <Field label={t('auth.currentPassword')} required>
-          <TextInput type="password" autoComplete="current-password" value={form.current} onChange={set('current')} required />
+          <PasswordInput autoComplete="current-password" value={form.current} onChange={set('current')} required />
         </Field>
         <Field label={t('accounts.newPassword')} required>
-          <TextInput type="password" autoComplete="new-password" value={form.next} onChange={set('next')} required minLength={8} maxLength={72} />
+          <PasswordInput autoComplete="new-password" value={form.next} onChange={set('next')} required minLength={8} maxLength={72} />
         </Field>
         <Field label={t('auth.repeatPassword')} required>
-          <TextInput type="password" autoComplete="new-password" value={form.repeat} onChange={set('repeat')} required minLength={8} maxLength={72} />
+          <PasswordInput autoComplete="new-password" value={form.repeat} onChange={set('repeat')} required minLength={8} maxLength={72} />
         </Field>
         <p className="text-xs text-slate-500">{t('auth.passwordRules')}</p>
       </form>

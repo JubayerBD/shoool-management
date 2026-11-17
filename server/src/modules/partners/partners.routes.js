@@ -60,8 +60,9 @@ router.post('/:id/deposits', async (req, res) => {
   const amountCents = moneyCents(req.body.amount);
   const date = parseDay(req.body.date);
   if (req.body.date > schoolDate()) throw ApiError.badRequest('Deposit date cannot be in the future');
-  const { note = '', requestKey, invoiceNo } = req.body;
-  if (typeof invoiceNo !== 'string' || !invoiceNo.trim() || invoiceNo.trim().length > 200) throw ApiError.badRequest('Invoice No. is required and must be at most 200 characters');
+  const { note = '', requestKey } = req.body;
+  const invoiceNo = req.body.invoiceNo ?? ''; // optional
+  if (typeof invoiceNo !== 'string' || invoiceNo.trim().length > 200) throw ApiError.badRequest('Invoice No. must be at most 200 characters');
   if (typeof note !== 'string' || note.length > 1000) throw ApiError.badRequest('Note must be at most 1000 characters');
   if (typeof requestKey !== 'string' || !/^[a-zA-Z0-9-]{16,100}$/.test(requestKey)) throw ApiError.badRequest('A valid request key is required');
   let deposit;

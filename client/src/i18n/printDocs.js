@@ -23,6 +23,7 @@ const entries = {
   invoiceDate: ['Invoice date', 'ইনভয়েসের তারিখ'],
   period: ['Billing period', 'বিলের সময়কাল'],
   dueDate: ['Due date', 'পরিশোধের শেষ তারিখ'],
+  receivedDate: ['Received date', 'টাকা গ্রহণের তারিখ'],
   receiptNo: ['Receipt no.', 'রসিদ নং'],
   voucherNo: ['Voucher no.', 'ভাউচার নং'],
   method: ['Payment method', 'পরিশোধের মাধ্যম'],

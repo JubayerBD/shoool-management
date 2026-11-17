@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext.jsx';
 import LanguageSwitcher from '../components/LanguageSwitcher.jsx';
+import PasswordInput from '../components/ui/PasswordInput.jsx';
 
 export default function Login() {
   const { t } = useTranslation();
@@ -59,16 +60,15 @@ export default function Login() {
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
+              <label htmlFor="login-password" className="mb-1 block text-sm font-medium text-slate-700">
                 {t('auth.password')}
               </label>
-              <input
-                type="password"
+              <PasswordInput
+                id="login-password"
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
               />
             </div>
             <button

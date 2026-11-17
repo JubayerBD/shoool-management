@@ -347,8 +347,8 @@ export default function TransactionManager({ type }) {
           <Field label={partyLabel}>
             <TextInput value={form[partyKey]} onChange={(e) => setField(partyKey, e.target.value)} />
           </Field>
-          <Field label={isIncome ? t('finance.invoiceNo') : t('finance.voucherNo')} required>
-            <TextInput type="text" required pattern={'.*\\S.*'} maxLength={200} value={form.reference} onChange={(e) => setField('reference', e.target.value)} />
+          <Field label={isIncome ? t('finance.invoiceNo') : t('finance.voucherNo')}>
+            <TextInput type="text" maxLength={200} value={form.reference} onChange={(e) => setField('reference', e.target.value)} />
           </Field>
           <div className="sm:col-span-2">
             <Field label={t('finance.note')}>

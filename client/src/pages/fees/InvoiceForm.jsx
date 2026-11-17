@@ -16,13 +16,12 @@ export default function InvoiceForm({ open, onClose, onSubmit, saving, studentId
   const [form, setForm] = useState({
     student: '',
     period: { en: '', bn: '' },
-    dueDate: '',
     items: [emptyItem()],
   });
 
   useEffect(() => {
     if (!open) return;
-    setForm({ student: studentId || '', period: { en: initialPeriod, bn: '' }, dueDate: '', items: [emptyItem()] });
+    setForm({ student: studentId || '', period: { en: initialPeriod, bn: '' }, items: [emptyItem()] });
     getAll('/people/students', { params: { limit: 200 } }).then((r) => setStudents(r.data.items));
     getAll('/fees/structures', { params: { limit: 200, isActive: true } })
       .then((r) => setStructures(r.data.items));
@@ -66,7 +65,6 @@ export default function InvoiceForm({ open, onClose, onSubmit, saving, studentId
         .filter((it) => it.title.en.trim() && it.amount !== '')
         .map((it) => ({ title: it.title, amount: Number(it.amount) })),
     };
-    if (form.dueDate) payload.dueDate = form.dueDate;
     onSubmit(payload);
   };
 
@@ -118,13 +116,6 @@ export default function InvoiceForm({ open, onClose, onSubmit, saving, studentId
               value={form.period.en}
               onChange={(e) => setForm((f) => ({ ...f, period: { ...f.period, en: e.target.value } }))}
               placeholder="August 2026"
-            />
-          </Field>
-          <Field label={t('fees.dueDate')}>
-            <TextInput
-              type="date"
-              value={form.dueDate}
-              onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
             />
           </Field>
         </div>

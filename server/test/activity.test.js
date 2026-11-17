@@ -55,7 +55,7 @@ test('creates, edits, deletes and rejected financial writes retain actor snapsho
   assert.equal((await request(`/finance/income/${created.item.id}`, accountant, { amount: 150, reference: '000-INV-EDIT' }, 'PUT')).status, 409);
   assert.equal((await request(`/finance/income/${created.item.id}`, accountant, undefined, 'DELETE')).status, 409);
   assert.equal(await ActivityLog.countDocuments({ recordId: created.item.id }), 3);
-  assert.equal((await request('/finance/expenses', accountant, { amount: 10, reference: ' ' })).status, 400);
+  assert.equal((await request('/finance/expenses', accountant, { amount: 10, reference: 123 })).status, 400);
   assert.ok(await ActivityLog.exists({ actor: accountant.id, outcome: 'failed', module: 'finance', status: 400 }));
   await User.updateOne({ _id: accountant.id }, { 'name.en': 'Renamed User' });
   log = await ActivityLog.findById(log._id).lean();

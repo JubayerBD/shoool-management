@@ -9,6 +9,8 @@
     "bn": "বাংলা"
   },
   "auth": {
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "login": "Log in",
     "logout": "Log out",
     "email": "Email",
